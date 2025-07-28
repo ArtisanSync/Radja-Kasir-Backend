@@ -1,0 +1,86 @@
+steps:
+  # Install dependencies
+  - name: "node:18"
+    entrypoint: npm
+    args: ["install"]
+
+  # Generate Prisma Client
+  - name: "node:18"
+    entrypoint: npx
+    args: ["prisma", "migrate", "deploy"]
+
+  # Build container image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "-t",
+        "asia-southeast2-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE_NAME",
+        ".",
+      ]
+
+  # Push container image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "push",
+        "asia-southeast2-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE_NAME",
+      ]
+
+  # Deploy to Cloud Run
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "radjakasir-api"
+      - "--image"
+      - "asia-southeast2-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE_NAME"
+      - "--region"
+      - "asia-southeast2"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--cpu-boost"
+      - "--execution-environment"
+      - "gen2"
+      - "--memory"
+      - "1Gi"
+      - "--cpu"
+      - "1"
+      - "--min-instances"
+      - "1"
+      - "--max-instances"
+      - "8"
+      - "--timeout"
+      - "600s"
+      - "--command"
+      - "node"
+      - "--args"
+      - "app.js"
+      - "--port"
+      - "3000"
+      - "--set-env-vars"
+      - "PORT=3000"
+      - "--set-env-vars"
+      - "NODE_ENV=production"
+      - "--set-env-vars"
+      - "DATABASE_URL=${_DATABASE_URL}"
+      - "--set-env-vars"
+      - "SUPABASE_URL=${_SUPABASE_URL}"
+      - "--set-env-vars"
+      - "SUPABASE_KEY=${_SUPABASE_KEY}"
+      - "--set-env-vars"
+      - "SUPABASE_STORAGE_BUCKET=${_SUPABASE_STORAGE_BUCKET}"
+      - "--set-env-vars"
+      - "IMAGEKIT_PUBLIC_KEY=${_IMAGEKIT_PUBLIC_KEY}"
+      - "--set-env-vars"
+      - "IMAGEKIT_PRIVATE_KEY=${_IMAGEKIT_PRIVATE_KEY}"
+      - "--set-env-vars"
+      - "IMAGEKIT_URL_ENDPOINT=${_IMAGEKIT_URL_ENDPOINT}"
+      - "--set-env-vars"
+      - "CORS_ORIGIN=${_CORS_ORIGIN}"
+      - "--service-account"
+      - "${_SERVICE_ACCOUNT}"
+
+images:
+  - "asia-southeast2-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE_NAME"
