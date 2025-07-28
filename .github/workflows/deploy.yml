@@ -72,17 +72,15 @@ jobs:
           --min-instances=0 \
           --max-instances=8 \
           --cpu-boost \
-          --port=3000 \
-          --set-env-vars PORT=3000 \
           --set-env-vars NODE_ENV=production \
           --set-env-vars DATABASE_URL=${{ secrets.DATABASE_URL }} \
           --set-env-vars SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
           --set-env-vars SUPABASE_KEY=${{ secrets.SUPABASE_KEY }} \
           --set-env-vars SUPABASE_STORAGE_BUCKET=${{ secrets.SUPABASE_STORAGE_BUCKET }} \
+          --set-env-vars CORS_ORIGIN=${{ secrets.CORS_ORIGIN }} \
           --set-env-vars IMAGEKIT_PUBLIC_KEY=${{ secrets.IMAGEKIT_PUBLIC_KEY }} \
           --set-env-vars IMAGEKIT_PRIVATE_KEY=${{ secrets.IMAGEKIT_PRIVATE_KEY }} \
-          --set-env-vars IMAGEKIT_URL_ENDPOINT=${{ secrets.IMAGEKIT_URL_ENDPOINT }} \
-          --set-env-vars CORS_ORIGIN="${{ secrets.CORS_ORIGIN }}"
+          --set-env-vars IMAGEKIT_URL_ENDPOINT=${{ secrets.IMAGEKIT_URL_ENDPOINT }}
           
     - name: Log deployment URL
       run: |
