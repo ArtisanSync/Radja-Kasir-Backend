@@ -20,7 +20,6 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   products Product[]
 
@@ -49,13 +48,11 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([storeId])
   @@map("customers")
 }
-
 
 model OrderDebt {
   id           String   @id @default(cuid())
@@ -122,14 +119,11 @@ model Order {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // Relations
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([storeId])
   @@map("orders")
 }
-
-
 
 model PostCategory {
   id        String   @id @default(cuid())
@@ -161,21 +155,20 @@ model Post {
 }
 
 model ProductVariant {
-  id           String   @id @default(cuid())
-  productId    String
-  image        String?
-  name         String   @default("0")
-  quantity     Int      @default(0)
-  qtyType      String?
-  capitalPrice Decimal  @default(0.00)
-  price        Decimal  @default(0.00)
-  tax          Int      @default(0)
-  discountRp   Decimal  @default(0.00)
-  discountPercent Int   @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  productId       String
+  image           String?
+  name            String   @default("0")
+  quantity        Int      @default(0)
+  qtyType         String?
+  capitalPrice    Decimal  @default(0.00)
+  price           Decimal  @default(0.00)
+  tax             Int      @default(0)
+  discountRp      Decimal  @default(0.00)
+  discountPercent Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  // Relations
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
@@ -183,21 +176,20 @@ model ProductVariant {
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  categoryId  String?
-  storeId     String
-  image       String?
-  name        String
-  code        String?
-  brand       String?
-  active      Boolean  @default(true)
-  isFavorite  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  categoryId String?
+  storeId    String
+  image      String?
+  name       String
+  code       String?
+  brand      String?
+  active     Boolean  @default(true)
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  // Relations
-  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  store    Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
   variants ProductVariant[]
 
   @@index([storeId])
@@ -211,6 +203,11 @@ model StoreMember {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([userId])
   @@map("store_members")
 }
 
@@ -237,12 +234,12 @@ model Store {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   categories Category[]
   customers  Customer[]
   products   Product[]
   orders     Order[]
+  members    StoreMember[]
 
   @@map("stores")
 }
@@ -255,23 +252,27 @@ model Subscribe {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("subscribes")
 }
 
 model User {
-  id                String   @id @default(cuid())
-  name              String
-  email             String   @unique
-  role              UserRole @default(USER)
-  isMember          Boolean   @default(false)
-  emailVerifiedAt   DateTime?
-  password          String
-  rememberToken     String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  role            UserRole  @default(USER)
+  isMember        Boolean   @default(false)
+  isSubscribe     Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  password        String
+  rememberToken   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  // Relations
-  stores Store[]
+  stores       Store[]
+  storeMembers StoreMember[]
+  subscribes   Subscribe[]
 
   @@map("users")
 }
