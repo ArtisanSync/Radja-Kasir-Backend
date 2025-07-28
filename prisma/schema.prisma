@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  ADMIN
+  USER
+  MEMBER
+}
+
 model Category {
   id        String   @id @default(cuid())
   storeId   String
@@ -50,26 +56,6 @@ model Customer {
   @@map("customers")
 }
 
-
-model ModelHasPermission {
-  permissionId String
-  modelType    String
-  modelId      String
-
-  @@id([permissionId, modelId, modelType])
-  @@index([modelId, modelType])
-  @@map("model_has_permissions")
-}
-
-model ModelHasRole {
-  roleId    String
-  modelType String
-  modelId   String
-
-  @@id([roleId, modelId, modelType])
-  @@index([modelId, modelType])
-  @@map("model_has_roles")
-}
 
 model OrderDebt {
   id           String   @id @default(cuid())
@@ -143,29 +129,7 @@ model Order {
   @@map("orders")
 }
 
-model Package {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  duration    Int
-  meta        Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 
-  @@map("packages")
-}
-
-
-model Permission {
-  id        String   @id @default(cuid())
-  name      String
-  guardName String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([name, guardName])
-  @@map("permissions")
-}
 
 model PostCategory {
   id        String   @id @default(cuid())
@@ -240,48 +204,6 @@ model Product {
   @@map("products")
 }
 
-model RoleHasPermission {
-  permissionId String
-  roleId       String
-
-  @@id([permissionId, roleId])
-  @@index([roleId])
-  @@map("role_has_permissions")
-}
-
-model Role {
-  id        String   @id @default(cuid())
-  name      String
-  guardName String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([name, guardName])
-  @@map("roles")
-}
-
-model SettingVersion {
-  id        String   @id @default(cuid())
-  version   String
-  active    Boolean
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("setting_versions")
-}
-
-model Setting {
-  id        String   @id @default(cuid())
-  label     String
-  content   String
-  meta      Json?
-  isActive  Boolean
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("settings")
-}
-
 model StoreMember {
   id        String   @id @default(cuid())
   storeId   String
@@ -340,6 +262,7 @@ model User {
   id                String   @id @default(cuid())
   name              String
   email             String   @unique
+  role              UserRole @default(USER)
   isMember          Boolean   @default(false)
   emailVerifiedAt   DateTime?
   password          String
