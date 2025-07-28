@@ -11,3 +11,6 @@ config/keys/
 !package.json
 !package-lock.json
 /generated/prisma
+
+# migrations
+prisma/migrations/
