@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  MEMBER
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@index([storeId])
+  @@map("categories")
+}
+
+model CategoryPost {
+  id         String   @id @default(cuid())
+  categoryId String
+  productId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("category_post")
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  whatsapp  String?
+  phone     String?
+  address   String?
+  company   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("customers")
+}
+
+
+model OrderDebt {
+  id           String   @id @default(cuid())
+  orderId      String
+  storeId      String
+  customerId   String
+  customerName String
+  phone        String
+  total        Int      @default(0)
+  paid         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([storeId])
+  @@map("order_depts")
+}
+
+model OrderDetail {
+  id           String   @id @default(cuid())
+  orderId      String
+  variantId    String
+  productName  String
+  capitalPrice Int      @default(0)
+  discount     Int?
+  unitPrice    Int      @default(0)
+  quantity     Int
+  total        Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("order_details")
+}
+
+model OrderPayment {
+  id            String   @id @default(cuid())
+  orderId       String
+  refNumber     String?
+  discount      Int      @default(0)
+  isPercent     Int      @default(0)
+  amountReceive Int      @default(0)
+  amountOrder   Int      @default(0)
+  paymentMethod String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([orderId])
+  @@map("order_payments")
+}
+
+model Order {
+  id           String   @id @default(cuid())
+  invNumber    String?
+  storeId      String
+  storeName    String?
+  customerId   String?
+  customerName String?
+  paymentType  String
+  ppn          Int      @default(0)
+  subTotal     String
+  total        String   @default("0")
+  status       String   @default("draft")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("orders")
+}
+
+
+
+model PostCategory {
+  id        String   @id @default(cuid())
+  slug      String
+  name      String
+  parentId  Int?
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("post_categories")
+}
+
+model Post {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String
+  content     String
+  authorId    Int
+  thumbnail   String
+  isPublished Boolean
+  publishedAt DateTime
+  tags        Json?
+  meta        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("posts")
+}
+
+model ProductVariant {
+  id           String   @id @default(cuid())
+  productId    String
+  image        String?
+  name         String   @default("0")
+  quantity     Int      @default(0)
+  qtyType      String?
+  capitalPrice Decimal  @default(0.00)
+  price        Decimal  @default(0.00)
+  tax          Int      @default(0)
+  discountRp   Decimal  @default(0.00)
+  discountPercent Int   @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  categoryId  String?
+  storeId     String
+  image       String?
+  name        String
+  code        String?
+  brand       String?
+  active      Boolean  @default(true)
+  isFavorite  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variants ProductVariant[]
+
+  @@index([storeId])
+  @@map("products")
+}
+
+model StoreMember {
+  id        String   @id @default(cuid())
+  storeId   String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("store_members")
+}
+
+model StoreSetting {
+  id        String   @id @default(cuid())
+  storeId   String
+  tax       Int      @default(0)
+  meta      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("store_settings")
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  storeType String?
+  address   String?
+  whatsapp  String?
+  logo      String?
+  stamp     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories Category[]
+  customers  Customer[]
+  products   Product[]
+  orders     Order[]
+
+  @@map("stores")
+}
+
+model Subscribe {
+  id        String   @id @default(cuid())
+  userId    String
+  packageId String
+  endDate   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscribes")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  name              String
+  email             String   @unique
+  role              UserRole @default(USER)
+  isMember          Boolean   @default(false)
+  emailVerifiedAt   DateTime?
+  password          String
+  rememberToken     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  stores Store[]
+
+  @@map("users")
+}
