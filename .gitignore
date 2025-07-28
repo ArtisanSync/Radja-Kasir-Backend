@@ -10,3 +10,4 @@ config/keys/
 *.json
 !package.json
 !package-lock.json
+/generated/prisma

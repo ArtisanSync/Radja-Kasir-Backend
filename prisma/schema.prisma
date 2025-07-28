@@ -1,0 +1,345 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model categories {
+  id         BigInt    @id(map: "idx_98844_primary") @default(autoincrement())
+  uuid       String?   @db.Char(36)
+  store_id   BigInt
+  name       String    @db.VarChar(255)
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+
+  @@index([uuid], map: "idx_98844_categories_uuid_index")
+}
+
+model category_post {
+  id          BigInt    @id(map: "idx_98849_primary") @default(autoincrement())
+  category_id Int
+  product_id  Int
+  created_at  DateTime? @db.Timestamptz(6)
+  updated_at  DateTime? @db.Timestamptz(6)
+}
+
+model customers {
+  id         BigInt    @id(map: "idx_98854_primary") @default(autoincrement())
+  store_id   BigInt
+  name       String    @db.VarChar(255)
+  whatsapp   String?   @db.VarChar(255)
+  phone      String?   @db.VarChar(255)
+  alamat     String?   @db.VarChar(255)
+  company    String?   @db.VarChar(255)
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+
+  @@index([store_id], map: "idx_98854_customers_store_id_index")
+}
+
+model failed_jobs {
+  id         BigInt   @id(map: "idx_98861_primary") @default(autoincrement())
+  uuid       String   @unique(map: "idx_98861_failed_jobs_uuid_unique") @db.VarChar(255)
+  connection String
+  queue      String
+  payload    String
+  exception  String
+  failed_at  DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model migrations {
+  id        BigInt @id(map: "idx_98869_primary") @default(autoincrement())
+  migration String @db.VarChar(255)
+  batch     Int
+}
+
+model model_has_permissions {
+  permission_id BigInt
+  model_type    String      @db.VarChar(255)
+  model_id      BigInt
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "model_has_permissions_permission_id_foreign")
+
+  @@id([permission_id, model_id, model_type], map: "idx_98873_primary")
+  @@index([model_id, model_type], map: "idx_98873_model_has_permissions_model_id_model_type_index")
+}
+
+model model_has_roles {
+  role_id    BigInt
+  model_type String @db.VarChar(255)
+  model_id   BigInt
+  roles      roles  @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "model_has_roles_role_id_foreign")
+
+  @@id([role_id, model_id, model_type], map: "idx_98876_primary")
+  @@index([model_id, model_type], map: "idx_98876_model_has_roles_model_id_model_type_index")
+}
+
+model order_depts {
+  id            BigInt    @id(map: "idx_98880_primary") @default(autoincrement())
+  uuid          String    @db.Char(36)
+  order_id      BigInt
+  store_id      BigInt
+  customer_id   BigInt
+  customer_name String    @db.VarChar(255)
+  phone         String    @db.VarChar(255)
+  total         BigInt    @default(0)
+  paid          Boolean   @default(false)
+  created_at    DateTime? @db.Timestamptz(6)
+  updated_at    DateTime? @db.Timestamptz(6)
+
+  @@index([customer_id], map: "idx_98880_order_depts_customer_id_index")
+  @@index([order_id], map: "idx_98880_order_depts_order_id_index")
+  @@index([store_id], map: "idx_98880_order_depts_store_id_index")
+}
+
+model order_details {
+  id            BigInt    @id(map: "idx_98889_primary") @default(autoincrement())
+  order_id      BigInt
+  variant_id    BigInt
+  product_name  String    @db.VarChar(255)
+  capital_price BigInt    @default(0)
+  discount      BigInt?
+  unit_price    BigInt    @default(0)
+  quantity      BigInt
+  total         BigInt
+  created_at    DateTime? @db.Timestamptz(6)
+  updated_at    DateTime? @db.Timestamptz(6)
+}
+
+model order_payments {
+  id             BigInt    @id(map: "idx_98896_primary") @default(autoincrement())
+  order_id       BigInt
+  ref_number     String?   @db.VarChar(255)
+  discount       BigInt    @default(0)
+  is_percent     Int       @default(0)
+  amount_receive BigInt    @default(0)
+  amount_order   BigInt    @default(0)
+  payment_method String?   @db.VarChar(255)
+  created_at     DateTime? @db.Timestamptz(6)
+  updated_at     DateTime? @db.Timestamptz(6)
+
+  @@index([order_id], map: "idx_98896_order_payments_order_id_index")
+}
+
+model orders {
+  id            BigInt    @id(map: "idx_98907_primary") @default(autoincrement())
+  uuid          String    @db.Char(36)
+  inv_number    String?   @db.VarChar(255)
+  store_id      BigInt
+  store_name    String?   @db.VarChar(255)
+  customer_id   String?   @db.VarChar(255)
+  customer_name String?   @db.VarChar(255)
+  payment_type  String    @db.VarChar(255)
+  ppn           BigInt    @default(0)
+  sub_total     String    @db.VarChar(255)
+  total         String    @default("0") @db.VarChar(255)
+  status        String    @default("draft") @db.VarChar(255)
+  created_at    DateTime? @db.Timestamptz(6)
+  updated_at    DateTime? @db.Timestamptz(6)
+
+  @@index([store_id], map: "idx_98907_orders_store_id_index")
+  @@index([uuid], map: "idx_98907_orders_uuid_index")
+}
+
+model packages {
+  id          BigInt    @id(map: "idx_98917_primary") @default(autoincrement())
+  name        String    @db.VarChar(255)
+  description String?
+  duration    Int
+  meta        Json?     @db.Json
+  created_at  DateTime? @db.Timestamptz(6)
+  updated_at  DateTime? @db.Timestamptz(6)
+}
+
+model password_reset_tokens {
+  email      String    @id(map: "idx_98923_primary") @db.VarChar(255)
+  token      String    @db.VarChar(255)
+  created_at DateTime? @db.Timestamptz(6)
+}
+
+model permissions {
+  id                    BigInt                  @id(map: "idx_98929_primary") @default(autoincrement())
+  name                  String                  @db.VarChar(255)
+  guard_name            String                  @db.VarChar(255)
+  created_at            DateTime?               @db.Timestamptz(6)
+  updated_at            DateTime?               @db.Timestamptz(6)
+  model_has_permissions model_has_permissions[]
+  role_has_permissions  role_has_permissions[]
+
+  @@unique([name, guard_name], map: "idx_98929_permissions_name_guard_name_unique")
+}
+
+model personal_access_tokens {
+  id             BigInt    @id(map: "idx_98936_primary") @default(autoincrement())
+  tokenable_type String    @db.VarChar(255)
+  tokenable_id   BigInt
+  name           String    @db.VarChar(255)
+  token          String    @unique(map: "idx_98936_personal_access_tokens_token_unique") @db.VarChar(64)
+  abilities      String?
+  last_used_at   DateTime? @db.Timestamptz(6)
+  expires_at     DateTime? @db.Timestamptz(6)
+  created_at     DateTime? @db.Timestamptz(6)
+  updated_at     DateTime? @db.Timestamptz(6)
+
+  @@index([tokenable_type, tokenable_id], map: "idx_98936_personal_access_tokens_tokenable_type_tokenable_id_in")
+}
+
+model post_categories {
+  id         BigInt    @id(map: "idx_98943_primary") @default(autoincrement())
+  slug       String    @db.VarChar(255)
+  name       String    @db.VarChar(255)
+  parent_id  Int?
+  is_active  Boolean   @default(false)
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+}
+
+model posts {
+  id           BigInt    @id(map: "idx_98951_primary") @default(autoincrement())
+  title        String    @db.VarChar(255)
+  slug         String    @db.VarChar(255)
+  content      String
+  author_id    Int
+  thumbnail    String    @db.VarChar(255)
+  is_published Boolean
+  published_at DateTime  @db.Date
+  tags         Json?     @db.Json
+  meta         Json?     @db.Json
+  created_at   DateTime? @db.Timestamptz(6)
+  updated_at   DateTime? @db.Timestamptz(6)
+}
+
+model product_variants {
+  id            BigInt    @id(map: "idx_98958_primary") @default(autoincrement())
+  product_id    BigInt
+  image         String?   @db.VarChar(255)
+  name          String    @default("0") @db.VarChar(255)
+  quantity      BigInt    @default(0)
+  qty_type      String?   @db.VarChar(255)
+  capital_price Decimal   @default(0.00) @db.Decimal(65, 2)
+  price         Decimal   @default(0.00) @db.Decimal(65, 2)
+  tax           BigInt    @default(0)
+  dic_rp        Decimal   @default(0.00) @db.Decimal(65, 2)
+  dic_percent   BigInt    @default(0)
+  created_at    DateTime? @db.Timestamptz(6)
+  updated_at    DateTime? @db.Timestamptz(6)
+  products      products  @relation(fields: [product_id], references: [id], onDelete: Cascade, map: "product_variants_product_id_foreign")
+
+  @@index([product_id], map: "idx_98958_product_variants_product_id_foreign")
+}
+
+model products {
+  id               BigInt             @id(map: "idx_98972_primary") @default(autoincrement())
+  uuid             String?            @db.Char(36)
+  category_id      BigInt?
+  store_id         BigInt
+  image            String?            @db.VarChar(255)
+  name             String             @db.VarChar(255)
+  code             String?            @db.VarChar(255)
+  brand            String?            @db.VarChar(255)
+  active           Boolean            @default(true)
+  is_favorite      Boolean            @default(false)
+  created_at       DateTime?          @db.Timestamptz(6)
+  updated_at       DateTime?          @db.Timestamptz(6)
+  product_variants product_variants[]
+
+  @@index([store_id], map: "idx_98972_products_store_id_index")
+  @@index([uuid], map: "idx_98972_products_uuid_index")
+}
+
+model role_has_permissions {
+  permission_id BigInt
+  role_id       BigInt
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "role_has_permissions_permission_id_foreign")
+  roles         roles       @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "role_has_permissions_role_id_foreign")
+
+  @@id([permission_id, role_id], map: "idx_98980_primary")
+  @@index([role_id], map: "idx_98980_role_has_permissions_role_id_foreign")
+}
+
+model roles {
+  id                   BigInt                 @id(map: "idx_98984_primary") @default(autoincrement())
+  name                 String                 @db.VarChar(255)
+  guard_name           String                 @db.VarChar(255)
+  created_at           DateTime?              @db.Timestamptz(6)
+  updated_at           DateTime?              @db.Timestamptz(6)
+  model_has_roles      model_has_roles[]
+  role_has_permissions role_has_permissions[]
+
+  @@unique([name, guard_name], map: "idx_98984_roles_name_guard_name_unique")
+}
+
+model setting_versions {
+  id         BigInt    @id(map: "idx_98991_primary") @default(autoincrement())
+  version    String    @db.VarChar(255)
+  active     Boolean
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+}
+
+model settings {
+  id         BigInt    @id(map: "idx_98996_primary") @default(autoincrement())
+  label      String    @db.VarChar(255)
+  content    String
+  meta       Json?     @db.Json
+  is_active  Boolean
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+}
+
+model store_members {
+  id         BigInt    @id(map: "idx_99003_primary") @default(autoincrement())
+  store_id   BigInt
+  user_id    BigInt
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+}
+
+model store_settings {
+  id         BigInt    @id(map: "idx_99008_primary") @default(autoincrement())
+  store_id   BigInt
+  tax        Int       @default(0)
+  meta       Json?     @db.Json
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+}
+
+model stores {
+  id         BigInt    @id(map: "idx_99016_primary") @default(autoincrement())
+  uuid       String?   @db.Char(36)
+  user_id    BigInt
+  name       String    @db.VarChar(255)
+  store_type String?   @db.VarChar(255)
+  address    String?
+  whatsapp   String?   @db.VarChar(255)
+  logo       String?   @db.VarChar(255)
+  stamp      String?   @db.VarChar(255)
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+
+  @@index([uuid], map: "idx_99016_stores_uuid_index")
+}
+
+model subscribes {
+  id         BigInt    @id(map: "idx_99023_primary") @default(autoincrement())
+  user_id    BigInt
+  package_id BigInt
+  end_date   DateTime  @db.Date
+  created_at DateTime? @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+}
+
+model users {
+  id                BigInt    @id(map: "idx_99028_primary") @default(autoincrement())
+  name              String    @db.VarChar(255)
+  email             String    @unique(map: "idx_99028_users_email_unique") @db.VarChar(255)
+  is_member         Boolean   @default(false)
+  email_verified_at DateTime? @db.Timestamptz(6)
+  password          String    @db.VarChar(255)
+  remember_token    String?   @db.VarChar(100)
+  created_at        DateTime? @db.Timestamptz(6)
+  updated_at        DateTime? @db.Timestamptz(6)
+}

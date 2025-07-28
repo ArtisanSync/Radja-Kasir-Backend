@@ -1,0 +1,90 @@
+name: Build and Push to GCR
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  IMAGE_NAME: radjakasir-api
+  REGISTRY_LOCATION: asia-southeast2-docker.pkg.dev
+  REPOSITORY: radjakasir-repository
+  
+jobs:
+  build-and-push:
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Generate Prisma Client
+      run: npx prisma generate
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      
+    - name: Check necessary APIs
+      run: |
+        gcloud services list --enabled --filter="name:run.googleapis.com" || echo "Cloud Run API may not be enabled. Continuing..."
+    
+    - name: Configure Docker for Artifact Registry
+      run: |
+        gcloud auth configure-docker $REGISTRY_LOCATION --quiet
+    
+    - name: Build Docker image
+      run: |
+        docker build -t $REGISTRY_LOCATION/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${{ github.sha }} .
+    
+    - name: Push Docker image
+      run: |
+        docker push $REGISTRY_LOCATION/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${{ github.sha }}
+    
+    - name: Deploy to Cloud Run
+      run: |
+        gcloud run deploy radjakasir-api \
+          --image=$REGISTRY_LOCATION/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${{ github.sha }} \
+          --region=asia-southeast2 \
+          --platform=managed \
+          --allow-unauthenticated \
+          --execution-environment=gen2 \
+          --timeout=600s \
+          --memory=1Gi \
+          --cpu=1 \
+          --min-instances=0 \
+          --max-instances=8 \
+          --cpu-boost \
+          --port=3000 \
+          --set-env-vars PORT=3000 \
+          --set-env-vars NODE_ENV=production \
+          --set-env-vars DATABASE_URL=${{ secrets.DATABASE_URL }} \
+          --set-env-vars SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+          --set-env-vars SUPABASE_KEY=${{ secrets.SUPABASE_KEY }} \
+          --set-env-vars SUPABASE_STORAGE_BUCKET=${{ secrets.SUPABASE_STORAGE_BUCKET }} \
+          --set-env-vars IMAGEKIT_PUBLIC_KEY=${{ secrets.IMAGEKIT_PUBLIC_KEY }} \
+          --set-env-vars IMAGEKIT_PRIVATE_KEY=${{ secrets.IMAGEKIT_PRIVATE_KEY }} \
+          --set-env-vars IMAGEKIT_URL_ENDPOINT=${{ secrets.IMAGEKIT_URL_ENDPOINT }} \
+          --set-env-vars CORS_ORIGIN="${{ secrets.CORS_ORIGIN }}"
+          
+    - name: Log deployment URL
+      run: |
+        echo "🚀 Deployment complete! Your app is available at:"
+        gcloud run services describe radjakasir-api --region=asia-southeast2 --format='value(status.url)'
