@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -8,338 +7,348 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model categories {
-  id         BigInt    @id(map: "idx_98844_primary") @default(autoincrement())
-  uuid       String?   @db.Char(36)
-  store_id   BigInt
-  name       String    @db.VarChar(255)
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model Category {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([uuid], map: "idx_98844_categories_uuid_index")
+  // Relations
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@index([storeId])
+  @@map("categories")
 }
 
-model category_post {
-  id          BigInt    @id(map: "idx_98849_primary") @default(autoincrement())
-  category_id Int
-  product_id  Int
-  created_at  DateTime? @db.Timestamptz(6)
-  updated_at  DateTime? @db.Timestamptz(6)
+model CategoryPost {
+  id         String   @id @default(cuid())
+  categoryId String
+  productId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("category_post")
 }
 
-model customers {
-  id         BigInt    @id(map: "idx_98854_primary") @default(autoincrement())
-  store_id   BigInt
-  name       String    @db.VarChar(255)
-  whatsapp   String?   @db.VarChar(255)
-  phone      String?   @db.VarChar(255)
-  alamat     String?   @db.VarChar(255)
-  company    String?   @db.VarChar(255)
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model Customer {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  whatsapp  String?
+  phone     String?
+  address   String?
+  company   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([store_id], map: "idx_98854_customers_store_id_index")
+  // Relations
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("customers")
 }
 
-model failed_jobs {
-  id         BigInt   @id(map: "idx_98861_primary") @default(autoincrement())
-  uuid       String   @unique(map: "idx_98861_failed_jobs_uuid_unique") @db.VarChar(255)
-  connection String
-  queue      String
-  payload    String
-  exception  String
-  failed_at  DateTime @default(now()) @db.Timestamptz(6)
+
+model ModelHasPermission {
+  permissionId String
+  modelType    String
+  modelId      String
+
+  @@id([permissionId, modelId, modelType])
+  @@index([modelId, modelType])
+  @@map("model_has_permissions")
 }
 
-model migrations {
-  id        BigInt @id(map: "idx_98869_primary") @default(autoincrement())
-  migration String @db.VarChar(255)
-  batch     Int
+model ModelHasRole {
+  roleId    String
+  modelType String
+  modelId   String
+
+  @@id([roleId, modelId, modelType])
+  @@index([modelId, modelType])
+  @@map("model_has_roles")
 }
 
-model model_has_permissions {
-  permission_id BigInt
-  model_type    String      @db.VarChar(255)
-  model_id      BigInt
-  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "model_has_permissions_permission_id_foreign")
+model OrderDebt {
+  id           String   @id @default(cuid())
+  orderId      String
+  storeId      String
+  customerId   String
+  customerName String
+  phone        String
+  total        Int      @default(0)
+  paid         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  @@id([permission_id, model_id, model_type], map: "idx_98873_primary")
-  @@index([model_id, model_type], map: "idx_98873_model_has_permissions_model_id_model_type_index")
+  @@index([customerId])
+  @@index([orderId])
+  @@index([storeId])
+  @@map("order_depts")
 }
 
-model model_has_roles {
-  role_id    BigInt
-  model_type String @db.VarChar(255)
-  model_id   BigInt
-  roles      roles  @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "model_has_roles_role_id_foreign")
+model OrderDetail {
+  id           String   @id @default(cuid())
+  orderId      String
+  variantId    String
+  productName  String
+  capitalPrice Int      @default(0)
+  discount     Int?
+  unitPrice    Int      @default(0)
+  quantity     Int
+  total        Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  @@id([role_id, model_id, model_type], map: "idx_98876_primary")
-  @@index([model_id, model_type], map: "idx_98876_model_has_roles_model_id_model_type_index")
+  @@map("order_details")
 }
 
-model order_depts {
-  id            BigInt    @id(map: "idx_98880_primary") @default(autoincrement())
-  uuid          String    @db.Char(36)
-  order_id      BigInt
-  store_id      BigInt
-  customer_id   BigInt
-  customer_name String    @db.VarChar(255)
-  phone         String    @db.VarChar(255)
-  total         BigInt    @default(0)
-  paid          Boolean   @default(false)
-  created_at    DateTime? @db.Timestamptz(6)
-  updated_at    DateTime? @db.Timestamptz(6)
+model OrderPayment {
+  id            String   @id @default(cuid())
+  orderId       String
+  refNumber     String?
+  discount      Int      @default(0)
+  isPercent     Int      @default(0)
+  amountReceive Int      @default(0)
+  amountOrder   Int      @default(0)
+  paymentMethod String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  @@index([customer_id], map: "idx_98880_order_depts_customer_id_index")
-  @@index([order_id], map: "idx_98880_order_depts_order_id_index")
-  @@index([store_id], map: "idx_98880_order_depts_store_id_index")
+  @@index([orderId])
+  @@map("order_payments")
 }
 
-model order_details {
-  id            BigInt    @id(map: "idx_98889_primary") @default(autoincrement())
-  order_id      BigInt
-  variant_id    BigInt
-  product_name  String    @db.VarChar(255)
-  capital_price BigInt    @default(0)
-  discount      BigInt?
-  unit_price    BigInt    @default(0)
-  quantity      BigInt
-  total         BigInt
-  created_at    DateTime? @db.Timestamptz(6)
-  updated_at    DateTime? @db.Timestamptz(6)
+model Order {
+  id           String   @id @default(cuid())
+  invNumber    String?
+  storeId      String
+  storeName    String?
+  customerId   String?
+  customerName String?
+  paymentType  String
+  ppn          Int      @default(0)
+  subTotal     String
+  total        String   @default("0")
+  status       String   @default("draft")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("orders")
 }
 
-model order_payments {
-  id             BigInt    @id(map: "idx_98896_primary") @default(autoincrement())
-  order_id       BigInt
-  ref_number     String?   @db.VarChar(255)
-  discount       BigInt    @default(0)
-  is_percent     Int       @default(0)
-  amount_receive BigInt    @default(0)
-  amount_order   BigInt    @default(0)
-  payment_method String?   @db.VarChar(255)
-  created_at     DateTime? @db.Timestamptz(6)
-  updated_at     DateTime? @db.Timestamptz(6)
-
-  @@index([order_id], map: "idx_98896_order_payments_order_id_index")
-}
-
-model orders {
-  id            BigInt    @id(map: "idx_98907_primary") @default(autoincrement())
-  uuid          String    @db.Char(36)
-  inv_number    String?   @db.VarChar(255)
-  store_id      BigInt
-  store_name    String?   @db.VarChar(255)
-  customer_id   String?   @db.VarChar(255)
-  customer_name String?   @db.VarChar(255)
-  payment_type  String    @db.VarChar(255)
-  ppn           BigInt    @default(0)
-  sub_total     String    @db.VarChar(255)
-  total         String    @default("0") @db.VarChar(255)
-  status        String    @default("draft") @db.VarChar(255)
-  created_at    DateTime? @db.Timestamptz(6)
-  updated_at    DateTime? @db.Timestamptz(6)
-
-  @@index([store_id], map: "idx_98907_orders_store_id_index")
-  @@index([uuid], map: "idx_98907_orders_uuid_index")
-}
-
-model packages {
-  id          BigInt    @id(map: "idx_98917_primary") @default(autoincrement())
-  name        String    @db.VarChar(255)
+model Package {
+  id          String   @id @default(cuid())
+  name        String
   description String?
   duration    Int
-  meta        Json?     @db.Json
-  created_at  DateTime? @db.Timestamptz(6)
-  updated_at  DateTime? @db.Timestamptz(6)
+  meta        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("packages")
 }
 
-model password_reset_tokens {
-  email      String    @id(map: "idx_98923_primary") @db.VarChar(255)
-  token      String    @db.VarChar(255)
-  created_at DateTime? @db.Timestamptz(6)
+
+model Permission {
+  id        String   @id @default(cuid())
+  name      String
+  guardName String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, guardName])
+  @@map("permissions")
 }
 
-model permissions {
-  id                    BigInt                  @id(map: "idx_98929_primary") @default(autoincrement())
-  name                  String                  @db.VarChar(255)
-  guard_name            String                  @db.VarChar(255)
-  created_at            DateTime?               @db.Timestamptz(6)
-  updated_at            DateTime?               @db.Timestamptz(6)
-  model_has_permissions model_has_permissions[]
-  role_has_permissions  role_has_permissions[]
+model PostCategory {
+  id        String   @id @default(cuid())
+  slug      String
+  name      String
+  parentId  Int?
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@unique([name, guard_name], map: "idx_98929_permissions_name_guard_name_unique")
+  @@map("post_categories")
 }
 
-model personal_access_tokens {
-  id             BigInt    @id(map: "idx_98936_primary") @default(autoincrement())
-  tokenable_type String    @db.VarChar(255)
-  tokenable_id   BigInt
-  name           String    @db.VarChar(255)
-  token          String    @unique(map: "idx_98936_personal_access_tokens_token_unique") @db.VarChar(64)
-  abilities      String?
-  last_used_at   DateTime? @db.Timestamptz(6)
-  expires_at     DateTime? @db.Timestamptz(6)
-  created_at     DateTime? @db.Timestamptz(6)
-  updated_at     DateTime? @db.Timestamptz(6)
+model Post {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String
+  content     String
+  authorId    Int
+  thumbnail   String
+  isPublished Boolean
+  publishedAt DateTime
+  tags        Json?
+  meta        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@index([tokenable_type, tokenable_id], map: "idx_98936_personal_access_tokens_tokenable_type_tokenable_id_in")
+  @@map("posts")
 }
 
-model post_categories {
-  id         BigInt    @id(map: "idx_98943_primary") @default(autoincrement())
-  slug       String    @db.VarChar(255)
-  name       String    @db.VarChar(255)
-  parent_id  Int?
-  is_active  Boolean   @default(false)
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model ProductVariant {
+  id           String   @id @default(cuid())
+  productId    String
+  image        String?
+  name         String   @default("0")
+  quantity     Int      @default(0)
+  qtyType      String?
+  capitalPrice Decimal  @default(0.00)
+  price        Decimal  @default(0.00)
+  tax          Int      @default(0)
+  discountRp   Decimal  @default(0.00)
+  discountPercent Int   @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_variants")
 }
 
-model posts {
-  id           BigInt    @id(map: "idx_98951_primary") @default(autoincrement())
-  title        String    @db.VarChar(255)
-  slug         String    @db.VarChar(255)
-  content      String
-  author_id    Int
-  thumbnail    String    @db.VarChar(255)
-  is_published Boolean
-  published_at DateTime  @db.Date
-  tags         Json?     @db.Json
-  meta         Json?     @db.Json
-  created_at   DateTime? @db.Timestamptz(6)
-  updated_at   DateTime? @db.Timestamptz(6)
+model Product {
+  id          String   @id @default(cuid())
+  categoryId  String?
+  storeId     String
+  image       String?
+  name        String
+  code        String?
+  brand       String?
+  active      Boolean  @default(true)
+  isFavorite  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variants ProductVariant[]
+
+  @@index([storeId])
+  @@map("products")
 }
 
-model product_variants {
-  id            BigInt    @id(map: "idx_98958_primary") @default(autoincrement())
-  product_id    BigInt
-  image         String?   @db.VarChar(255)
-  name          String    @default("0") @db.VarChar(255)
-  quantity      BigInt    @default(0)
-  qty_type      String?   @db.VarChar(255)
-  capital_price Decimal   @default(0.00) @db.Decimal(65, 2)
-  price         Decimal   @default(0.00) @db.Decimal(65, 2)
-  tax           BigInt    @default(0)
-  dic_rp        Decimal   @default(0.00) @db.Decimal(65, 2)
-  dic_percent   BigInt    @default(0)
-  created_at    DateTime? @db.Timestamptz(6)
-  updated_at    DateTime? @db.Timestamptz(6)
-  products      products  @relation(fields: [product_id], references: [id], onDelete: Cascade, map: "product_variants_product_id_foreign")
+model RoleHasPermission {
+  permissionId String
+  roleId       String
 
-  @@index([product_id], map: "idx_98958_product_variants_product_id_foreign")
+  @@id([permissionId, roleId])
+  @@index([roleId])
+  @@map("role_has_permissions")
 }
 
-model products {
-  id               BigInt             @id(map: "idx_98972_primary") @default(autoincrement())
-  uuid             String?            @db.Char(36)
-  category_id      BigInt?
-  store_id         BigInt
-  image            String?            @db.VarChar(255)
-  name             String             @db.VarChar(255)
-  code             String?            @db.VarChar(255)
-  brand            String?            @db.VarChar(255)
-  active           Boolean            @default(true)
-  is_favorite      Boolean            @default(false)
-  created_at       DateTime?          @db.Timestamptz(6)
-  updated_at       DateTime?          @db.Timestamptz(6)
-  product_variants product_variants[]
+model Role {
+  id        String   @id @default(cuid())
+  name      String
+  guardName String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([store_id], map: "idx_98972_products_store_id_index")
-  @@index([uuid], map: "idx_98972_products_uuid_index")
+  @@unique([name, guardName])
+  @@map("roles")
 }
 
-model role_has_permissions {
-  permission_id BigInt
-  role_id       BigInt
-  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "role_has_permissions_permission_id_foreign")
-  roles         roles       @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "role_has_permissions_role_id_foreign")
+model SettingVersion {
+  id        String   @id @default(cuid())
+  version   String
+  active    Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@id([permission_id, role_id], map: "idx_98980_primary")
-  @@index([role_id], map: "idx_98980_role_has_permissions_role_id_foreign")
+  @@map("setting_versions")
 }
 
-model roles {
-  id                   BigInt                 @id(map: "idx_98984_primary") @default(autoincrement())
-  name                 String                 @db.VarChar(255)
-  guard_name           String                 @db.VarChar(255)
-  created_at           DateTime?              @db.Timestamptz(6)
-  updated_at           DateTime?              @db.Timestamptz(6)
-  model_has_roles      model_has_roles[]
-  role_has_permissions role_has_permissions[]
+model Setting {
+  id        String   @id @default(cuid())
+  label     String
+  content   String
+  meta      Json?
+  isActive  Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@unique([name, guard_name], map: "idx_98984_roles_name_guard_name_unique")
+  @@map("settings")
 }
 
-model setting_versions {
-  id         BigInt    @id(map: "idx_98991_primary") @default(autoincrement())
-  version    String    @db.VarChar(255)
-  active     Boolean
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model StoreMember {
+  id        String   @id @default(cuid())
+  storeId   String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("store_members")
 }
 
-model settings {
-  id         BigInt    @id(map: "idx_98996_primary") @default(autoincrement())
-  label      String    @db.VarChar(255)
-  content    String
-  meta       Json?     @db.Json
-  is_active  Boolean
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model StoreSetting {
+  id        String   @id @default(cuid())
+  storeId   String
+  tax       Int      @default(0)
+  meta      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("store_settings")
 }
 
-model store_members {
-  id         BigInt    @id(map: "idx_99003_primary") @default(autoincrement())
-  store_id   BigInt
-  user_id    BigInt
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model Store {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  storeType String?
+  address   String?
+  whatsapp  String?
+  logo      String?
+  stamp     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories Category[]
+  customers  Customer[]
+  products   Product[]
+  orders     Order[]
+
+  @@map("stores")
 }
 
-model store_settings {
-  id         BigInt    @id(map: "idx_99008_primary") @default(autoincrement())
-  store_id   BigInt
-  tax        Int       @default(0)
-  meta       Json?     @db.Json
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model Subscribe {
+  id        String   @id @default(cuid())
+  userId    String
+  packageId String
+  endDate   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscribes")
 }
 
-model stores {
-  id         BigInt    @id(map: "idx_99016_primary") @default(autoincrement())
-  uuid       String?   @db.Char(36)
-  user_id    BigInt
-  name       String    @db.VarChar(255)
-  store_type String?   @db.VarChar(255)
-  address    String?
-  whatsapp   String?   @db.VarChar(255)
-  logo       String?   @db.VarChar(255)
-  stamp      String?   @db.VarChar(255)
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
+model User {
+  id                String   @id @default(cuid())
+  name              String
+  email             String   @unique
+  isMember          Boolean   @default(false)
+  emailVerifiedAt   DateTime?
+  password          String
+  rememberToken     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  @@index([uuid], map: "idx_99016_stores_uuid_index")
-}
+  // Relations
+  stores Store[]
 
-model subscribes {
-  id         BigInt    @id(map: "idx_99023_primary") @default(autoincrement())
-  user_id    BigInt
-  package_id BigInt
-  end_date   DateTime  @db.Date
-  created_at DateTime? @db.Timestamptz(6)
-  updated_at DateTime? @db.Timestamptz(6)
-}
-
-model users {
-  id                BigInt    @id(map: "idx_99028_primary") @default(autoincrement())
-  name              String    @db.VarChar(255)
-  email             String    @unique(map: "idx_99028_users_email_unique") @db.VarChar(255)
-  is_member         Boolean   @default(false)
-  email_verified_at DateTime? @db.Timestamptz(6)
-  password          String    @db.VarChar(255)
-  remember_token    String?   @db.VarChar(100)
-  created_at        DateTime? @db.Timestamptz(6)
-  updated_at        DateTime? @db.Timestamptz(6)
+  @@map("users")
 }
