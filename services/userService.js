@@ -1,17 +1,12 @@
 import bcrypt from "bcrypt";
 import prisma from "../config/prisma.js";
-import {
-  generateToken,
-  generateResetToken,
-  generateVerificationToken,
-  verifyToken,
-} from "../utils/jwt.js";
+import { generateToken, generateRandomToken } from "../utils/jwt.js";
 import {
   sendResetPasswordEmail,
   sendVerificationEmail,
 } from "../libs/nodemailer.js";
 import imagekit from "../config/imagekit.js";
-import { BCRYPT_ROUNDS } from "../config/auth.js";
+import { BCRYPT_ROUNDS, TOKEN_CONFIG } from "../config/auth.js";
 
 // Register new user
 export const registerUser = async (userData) => {
@@ -24,9 +19,9 @@ export const registerUser = async (userData) => {
   }
 
   const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  const verificationToken = generateVerificationToken({ email });
+  const verificationToken = generateRandomToken();
 
-  // Create user with verification token
+  // Create user
   const user = await prisma.user.create({
     data: {
       name,
@@ -46,8 +41,7 @@ export const registerUser = async (userData) => {
 
   return {
     user,
-    message:
-      "Registration successful. Please check your email to verify your account.",
+    message: "Registration successful. Check email to verify account.",
   };
 };
 
@@ -61,9 +55,9 @@ export const resendVerificationToken = async (email) => {
     throw new Error("User not found or already verified");
   }
 
-  const verificationToken = generateVerificationToken({ email });
+  const verificationToken = generateRandomToken();
 
-  // Update user with new token
+  // Update token
   await prisma.user.update({
     where: { id: user.id },
     data: { rememberToken: verificationToken },
@@ -81,46 +75,46 @@ export const resendVerificationToken = async (email) => {
   return true;
 };
 
-// Verify email
-export const verifyEmail = async (token) => {
-  try {
-    const decoded = verifyToken(token);
+// Verify email with email and token
+export const verifyEmail = async (email, token) => {
+  const user = await prisma.user.findFirst({
+    where: {
+      email,
+      rememberToken: token,
+      emailVerifiedAt: null,
+    },
+  });
 
-    const user = await prisma.user.findFirst({
-      where: {
-        email: decoded.email,
-        rememberToken: token,
-        emailVerifiedAt: null,
-      },
-    });
-
-    if (!user) {
-      throw new Error("Invalid or expired verification token");
-    }
-
-    // Update user as verified
-    const updatedUser = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        emailVerifiedAt: new Date(),
-        rememberToken: null,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        emailVerifiedAt: true,
-      },
-    });
-
-    // Generate login token
-    const loginToken = generateToken({ userId: user.id, email: user.email });
-
-    return { user: updatedUser, token: loginToken };
-  } catch (error) {
-    throw new Error("Invalid or expired verification token");
+  if (!user) {
+    throw new Error("Invalid email or token");
   }
+
+  // Check token expiry (24 hours)
+  const tokenAge = Date.now() - user.updatedAt.getTime();
+  if (tokenAge > TOKEN_CONFIG.verificationExpiry) {
+    throw new Error("Verification token expired");
+  }
+
+  // Update as verified
+  const updatedUser = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerifiedAt: new Date(),
+      rememberToken: null,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      emailVerifiedAt: true,
+    },
+  });
+
+  // Generate login token
+  const loginToken = generateToken({ userId: user.id, email: user.email });
+
+  return { user: updatedUser, token: loginToken };
 };
 
 // Login user
@@ -130,7 +124,7 @@ export const loginUser = async (email, password) => {
     throw new Error("Invalid credentials");
   }
 
-  // Check if email is verified
+  // Check email verified
   if (!user.emailVerifiedAt) {
     throw new Error("Please verify your email before logging in");
   }
@@ -194,7 +188,7 @@ export const requestPasswordReset = async (email) => {
     throw new Error("User with this email not found");
   }
 
-  const resetToken = generateResetToken({ userId: user.id, email: user.email });
+  const resetToken = generateRandomToken();
 
   await prisma.user.update({
     where: { id: user.id },
@@ -220,7 +214,7 @@ export const resendResetToken = async (email) => {
     throw new Error("User with this email not found");
   }
 
-  const resetToken = generateResetToken({ userId: user.id, email: user.email });
+  const resetToken = generateRandomToken();
 
   await prisma.user.update({
     where: { id: user.id },
@@ -239,39 +233,39 @@ export const resendResetToken = async (email) => {
   return true;
 };
 
-// Reset password with token
-export const resetPassword = async (token, newPassword) => {
-  try {
-    const decoded = verifyToken(token);
+// Reset password with email and token
+export const resetPassword = async (email, token, newPassword) => {
+  const user = await prisma.user.findFirst({
+    where: {
+      email,
+      rememberToken: token,
+    },
+  });
 
-    const user = await prisma.user.findFirst({
-      where: {
-        id: decoded.userId,
-        rememberToken: token,
-      },
-    });
-
-    if (!user) {
-      throw new Error("Invalid or expired reset token");
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        rememberToken: null,
-      },
-    });
-
-    return true;
-  } catch (error) {
-    throw new Error("Invalid or expired reset token");
+  if (!user) {
+    throw new Error("Invalid email or token");
   }
+
+  // Check token expiry (15 minutes)
+  const tokenAge = Date.now() - user.updatedAt.getTime();
+  if (tokenAge > TOKEN_CONFIG.resetExpiry) {
+    throw new Error("Reset token expired");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      password: hashedPassword,
+      rememberToken: null,
+    },
+  });
+
+  return true;
 };
 
-// Delete user - Only ADMIN can delete any user
+// Delete user - Admin only
 export const deleteUser = async (userId, currentUser) => {
   if (currentUser.role !== "ADMIN") {
     throw new Error("Only administrators can delete users");
@@ -317,7 +311,7 @@ export const getAllUsers = async (currentUser) => {
   return users;
 };
 
-// Get user profile with all relations
+// Get user profile
 export const getUserProfile = async (userId) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -332,7 +326,6 @@ export const getUserProfile = async (userId) => {
       emailVerifiedAt: true,
       createdAt: true,
       updatedAt: true,
-      // Include all related data
       stores: {
         select: {
           id: true,
