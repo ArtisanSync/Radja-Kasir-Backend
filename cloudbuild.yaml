@@ -81,6 +81,14 @@ steps:
       - "CORS_ORIGIN=${_CORS_ORIGIN}"
       - "--service-account"
       - "${_SERVICE_ACCOUNT}"
+      - "EMAIL_USER=${EMAIL_USER}"
+      - "--set-env-vars"
+      - "EMAIL_PASS=${EMAIL_PASS}"
+      - "--set-env-vars"
+      - "JWT_SECRET=${JWT_SECRET}"
+      - "--set-env-vars"
+      - "JWT_EXPIRATION=${JWT_EXPIRATION}"
+      - "--set-env-vars"
 
 images:
   - "asia-southeast2-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE_NAME"
