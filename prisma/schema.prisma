@@ -27,16 +27,6 @@ model Category {
   @@map("categories")
 }
 
-model CategoryPost {
-  id         String   @id @default(cuid())
-  categoryId String
-  productId  String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@map("category_post")
-}
-
 model Customer {
   id        String   @id @default(cuid())
   storeId   String
