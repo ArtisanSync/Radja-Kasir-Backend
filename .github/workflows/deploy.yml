@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   IMAGE_NAME: radjakasir-api
@@ -59,34 +60,34 @@ jobs:
           docker push $REGISTRY_LOCATION/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${{ github.sha }}
 
       - name: Deploy to Cloud Run
-    run: |
-      gcloud run deploy radjakasir-api \
-        --image=$REGISTRY_LOCATION/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${{ github.sha }} \
-        --region=asia-southeast2 \
-        --platform=managed \
-        --allow-unauthenticated \
-        --execution-environment=gen2 \
-        --timeout=600s \
-        --memory=1Gi \
-        --cpu=1 \
-        --min-instances=0 \
-        --max-instances=8 \
-        --cpu-boost \
-        --set-env-vars NODE_ENV=production \
-        --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-        --set-env-vars SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-        --set-env-vars SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}" \
-        --set-env-vars SUPABASE_STORAGE_BUCKET="${{ secrets.SUPABASE_STORAGE_BUCKET }}" \
-        --set-env-vars CORS_ORIGIN="${{ secrets.CORS_ORIGIN }}" \
-        --set-env-vars IMAGEKIT_PUBLIC_KEY="${{ secrets.IMAGEKIT_PUBLIC_KEY }}" \
-        --set-env-vars IMAGEKIT_PRIVATE_KEY="${{ secrets.IMAGEKIT_PRIVATE_KEY }}" \
-        --set-env-vars IMAGEKIT_URL_ENDPOINT="${{ secrets.IMAGEKIT_URL_ENDPOINT }}" \
-        --set-env-vars EMAIL_USER="${{ secrets.EMAIL_USER }}" \
-        --set-env-vars EMAIL_PASS="${{ secrets.EMAIL_PASS }}" \
-        --set-env-vars JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-        --set-env-vars JWT_EXPIRATION="${{ secrets.JWT_EXPIRATION }}"
+        run: |
+          gcloud run deploy radjakasir-api \
+            --image=$REGISTRY_LOCATION/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${{ github.sha }} \
+            --region=asia-southeast2 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --execution-environment=gen2 \
+            --timeout=600s \
+            --memory=1Gi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=8 \
+            --cpu-boost \
+            --set-env-vars NODE_ENV=production \
+            --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --set-env-vars SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --set-env-vars SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}" \
+            --set-env-vars SUPABASE_STORAGE_BUCKET="${{ secrets.SUPABASE_STORAGE_BUCKET }}" \
+            --set-env-vars CORS_ORIGIN="${{ secrets.CORS_ORIGIN }}" \
+            --set-env-vars IMAGEKIT_PUBLIC_KEY="${{ secrets.IMAGEKIT_PUBLIC_KEY }}" \
+            --set-env-vars IMAGEKIT_PRIVATE_KEY="${{ secrets.IMAGEKIT_PRIVATE_KEY }}" \
+            --set-env-vars IMAGEKIT_URL_ENDPOINT="${{ secrets.IMAGEKIT_URL_ENDPOINT }}" \
+            --set-env-vars EMAIL_USER="${{ secrets.EMAIL_USER }}" \
+            --set-env-vars EMAIL_PASS="${{ secrets.EMAIL_PASS }}" \
+            --set-env-vars JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            --set-env-vars JWT_EXPIRATION="${{ secrets.JWT_EXPIRATION }}"
 
-    - name: Log deployment URL
-      run: |
-        echo "🚀 Deployment complete! Your app is available at:"
-        gcloud run services describe radjakasir-api --region=asia-southeast2 --format='value(status.url)'
+      - name: Log deployment URL
+        run: |
+          echo "🚀 Deployment complete! Your app is available at:"
+          gcloud run services describe radjakasir-api --region=asia-southeast2 --format='value(status.url)'
