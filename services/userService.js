@@ -3,9 +3,13 @@ import prisma from "../config/prisma.js";
 import {
   generateToken,
   generateResetToken,
+  generateVerificationToken,
   verifyToken,
-} from "../utils/jwt.js"; // Fix: Add verifyToken import
-import { sendResetPasswordEmail } from "../libs/nodemailer.js";
+} from "../utils/jwt.js";
+import {
+  sendResetPasswordEmail,
+  sendVerificationEmail,
+} from "../libs/nodemailer.js";
 import imagekit from "../config/imagekit.js";
 import { BCRYPT_ROUNDS } from "../config/auth.js";
 
@@ -13,20 +17,110 @@ import { BCRYPT_ROUNDS } from "../config/auth.js";
 export const registerUser = async (userData) => {
   const { name, email, password } = userData;
 
+  // Check existing user
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw new Error("Email already registered");
   }
 
   const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const verificationToken = generateVerificationToken({ email });
 
+  // Create user with verification token
   const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword },
+    data: {
+      name,
+      email,
+      password: hashedPassword,
+      rememberToken: verificationToken,
+    },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
   });
 
-  const token = generateToken({ userId: user.id, email: user.email });
-  return { user, token };
+  // Send verification email
+  const emailSent = await sendVerificationEmail(email, verificationToken, name);
+  if (!emailSent) {
+    await prisma.user.delete({ where: { id: user.id } });
+    throw new Error("Failed to send verification email");
+  }
+
+  return {
+    user,
+    message:
+      "Registration successful. Please check your email to verify your account.",
+  };
+};
+
+// Resend verification token
+export const resendVerificationToken = async (email) => {
+  const user = await prisma.user.findUnique({
+    where: { email, emailVerifiedAt: null },
+  });
+
+  if (!user) {
+    throw new Error("User not found or already verified");
+  }
+
+  const verificationToken = generateVerificationToken({ email });
+
+  // Update user with new token
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { rememberToken: verificationToken },
+  });
+
+  const emailSent = await sendVerificationEmail(
+    email,
+    verificationToken,
+    user.name
+  );
+  if (!emailSent) {
+    throw new Error("Failed to send verification email");
+  }
+
+  return true;
+};
+
+// Verify email
+export const verifyEmail = async (token) => {
+  try {
+    const decoded = verifyToken(token);
+
+    const user = await prisma.user.findFirst({
+      where: {
+        email: decoded.email,
+        rememberToken: token,
+        emailVerifiedAt: null,
+      },
+    });
+
+    if (!user) {
+      throw new Error("Invalid or expired verification token");
+    }
+
+    // Update user as verified
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerifiedAt: new Date(),
+        rememberToken: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    // Generate login token
+    const loginToken = generateToken({ userId: user.id, email: user.email });
+
+    return { user: updatedUser, token: loginToken };
+  } catch (error) {
+    throw new Error("Invalid or expired verification token");
+  }
 };
 
 // Login user
@@ -34,6 +128,11 @@ export const loginUser = async (email, password) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     throw new Error("Invalid credentials");
+  }
+
+  // Check if email is verified
+  if (!user.emailVerifiedAt) {
+    throw new Error("Please verify your email before logging in");
   }
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -51,6 +150,7 @@ export const loginUser = async (email, password) => {
 export const updateUser = async (userId, updateData, file) => {
   let avatarUrl = null;
 
+  // Upload avatar if provided
   if (file) {
     const uploadResponse = await imagekit.upload({
       file: file.buffer,
@@ -113,13 +213,37 @@ export const requestPasswordReset = async (email) => {
   return true;
 };
 
-// Reset password with token - FIXED
+// Resend reset password token
+export const resendResetToken = async (email) => {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    throw new Error("User with this email not found");
+  }
+
+  const resetToken = generateResetToken({ userId: user.id, email: user.email });
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { rememberToken: resetToken },
+  });
+
+  const emailSent = await sendResetPasswordEmail(
+    user.email,
+    resetToken,
+    user.name
+  );
+  if (!emailSent) {
+    throw new Error("Failed to send reset email");
+  }
+
+  return true;
+};
+
+// Reset password with token
 export const resetPassword = async (token, newPassword) => {
   try {
-    // Verify token first
     const decoded = verifyToken(token);
 
-    // Find user with matching token
     const user = await prisma.user.findFirst({
       where: {
         id: decoded.userId,
@@ -131,10 +255,8 @@ export const resetPassword = async (token, newPassword) => {
       throw new Error("Invalid or expired reset token");
     }
 
-    // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
-    // Update password and clear token
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -145,13 +267,16 @@ export const resetPassword = async (token, newPassword) => {
 
     return true;
   } catch (error) {
-    console.error("Reset password error:", error); // Debug log
     throw new Error("Invalid or expired reset token");
   }
 };
 
-// Delete user with permission check
+// Delete user - Only ADMIN can delete any user
 export const deleteUser = async (userId, currentUser) => {
+  if (currentUser.role !== "ADMIN") {
+    throw new Error("Only administrators can delete users");
+  }
+
   const targetUser = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, role: true, name: true },
@@ -161,15 +286,7 @@ export const deleteUser = async (userId, currentUser) => {
     throw new Error("User not found");
   }
 
-  // Permission checks
-  if (currentUser.role === "MEMBER") {
-    throw new Error("Members cannot delete users");
-  }
-
-  if (currentUser.role === "USER" && targetUser.role !== "MEMBER") {
-    throw new Error("Users can only delete members");
-  }
-
+  // Prevent self-deletion
   if (currentUser.id === userId) {
     throw new Error("Cannot delete yourself");
   }
@@ -191,10 +308,69 @@ export const getAllUsers = async (currentUser) => {
       email: true,
       avatar: true,
       role: true,
+      emailVerifiedAt: true,
       createdAt: true,
     },
     orderBy: { createdAt: "desc" },
   });
 
   return users;
+};
+
+// Get user profile with all relations
+export const getUserProfile = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      avatar: true,
+      role: true,
+      isMember: true,
+      isSubscribe: true,
+      emailVerifiedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      // Include all related data
+      stores: {
+        select: {
+          id: true,
+          name: true,
+          storeType: true,
+          address: true,
+          logo: true,
+          createdAt: true,
+        },
+      },
+      storeMembers: {
+        select: {
+          id: true,
+          store: {
+            select: {
+              id: true,
+              name: true,
+              storeType: true,
+              logo: true,
+            },
+          },
+          createdAt: true,
+        },
+      },
+      subscribes: {
+        select: {
+          id: true,
+          packageId: true,
+          endDate: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  return user;
 };

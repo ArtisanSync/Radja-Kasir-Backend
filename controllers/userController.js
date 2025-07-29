@@ -1,12 +1,16 @@
 import { successResponse, errorResponse } from "../utils/response.js";
 import {
   registerUser,
+  resendVerificationToken,
+  verifyEmail,
   loginUser,
   updateUser,
   requestPasswordReset,
+  resendResetToken,
   resetPassword,
   deleteUser,
   getAllUsers,
+  getUserProfile,
 } from "../services/userService.js";
 
 // Register user
@@ -23,7 +27,44 @@ export const register = async (req, res) => {
     }
 
     const result = await registerUser({ name, email, password });
-    return successResponse(res, result, "User registered successfully", 201);
+    return successResponse(
+      res,
+      result,
+      "Registration successful. Please verify your email.",
+      201
+    );
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+// Resend verification token
+export const resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return errorResponse(res, "Email is required", 400);
+    }
+
+    await resendVerificationToken(email);
+    return successResponse(res, null, "Verification token sent to your email");
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+// Verify email
+export const verifyUserEmail = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return errorResponse(res, "Verification token is required", 400);
+    }
+
+    const result = await verifyEmail(token);
+    return successResponse(res, result, "Email verified successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
@@ -75,7 +116,23 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
-// Reset password - Enhanced debugging
+// Resend reset password token
+export const resendResetPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return errorResponse(res, "Email is required", 400);
+    }
+
+    await resendResetToken(email);
+    return successResponse(res, null, "Reset token sent to your email");
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+// Reset password
 export const resetUserPassword = async (req, res) => {
   try {
     const { token, password } = req.body;
@@ -88,20 +145,14 @@ export const resetUserPassword = async (req, res) => {
       return errorResponse(res, "Password must be at least 6 characters", 400);
     }
 
-    console.log(
-      "Reset password request received with token:",
-      token.substring(0, 20) + "..."
-    ); // Debug log
-
     await resetPassword(token, password);
     return successResponse(res, null, "Password reset successfully");
   } catch (error) {
-    console.error("Reset password controller error:", error); // Debug log
     return errorResponse(res, error.message, 400);
   }
 };
 
-// Delete user
+// Delete user (Admin only)
 export const removeUser = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -118,7 +169,7 @@ export const removeUser = async (req, res) => {
   }
 };
 
-// Get all users
+// Get all users (Admin only)
 export const getUsers = async (req, res) => {
   try {
     const currentUser = req.user;
@@ -129,10 +180,12 @@ export const getUsers = async (req, res) => {
   }
 };
 
-// Get current user profile
+// Get current user profile with all relations
 export const getProfile = async (req, res) => {
   try {
-    return successResponse(res, req.user, "Profile retrieved successfully");
+    const userId = req.user.id;
+    const profile = await getUserProfile(userId);
+    return successResponse(res, profile, "Profile retrieved successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
