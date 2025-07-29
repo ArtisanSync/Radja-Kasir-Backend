@@ -8,21 +8,17 @@ export const generateToken = (payload) => {
   });
 };
 
-// Generate reset token
-export const generateResetToken = (payload) => {
-  return jwt.sign(payload, JWT_CONFIG.secret, {
-    expiresIn: JWT_CONFIG.resetTokenExpiresIn,
-  });
+// Generate 6-digit random token
+export const generateRandomToken = () => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let token = "";
+  for (let i = 0; i < 6; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
 };
 
-// Generate email verification token
-export const generateVerificationToken = (payload) => {
-  return jwt.sign(payload, JWT_CONFIG.secret, {
-    expiresIn: "24h",
-  });
-};
-
-// Verify token
+// Verify JWT token (for login)
 export const verifyToken = (token) => {
   try {
     return jwt.verify(token, JWT_CONFIG.secret);
