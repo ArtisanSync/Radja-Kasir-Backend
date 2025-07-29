@@ -11,6 +11,35 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Send email verification
+export const sendVerificationEmail = async (email, token, name) => {
+  try {
+    const templatePath = path.join(
+      process.cwd(),
+      "templates",
+      "email-verification.html"
+    );
+    let htmlTemplate = fs.readFileSync(templatePath, "utf8");
+
+    // Replace template variables
+    htmlTemplate = htmlTemplate.replace("{{name}}", name);
+    htmlTemplate = htmlTemplate.replace("{{token}}", token);
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Verify Your Email - Radja Kasir",
+      html: htmlTemplate,
+    };
+
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error("Email send error:", error);
+    return false;
+  }
+};
+
 // Send reset password email
 export const sendResetPasswordEmail = async (email, token, name) => {
   try {
@@ -24,10 +53,6 @@ export const sendResetPasswordEmail = async (email, token, name) => {
     // Replace template variables
     htmlTemplate = htmlTemplate.replace("{{name}}", name);
     htmlTemplate = htmlTemplate.replace("{{token}}", token);
-    htmlTemplate = htmlTemplate.replace(
-      "{{resetUrl}}",
-      `${process.env.FRONTEND_URL}/reset-password?token=${token}`
-    );
 
     const mailOptions = {
       from: process.env.EMAIL_USER,

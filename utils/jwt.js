@@ -15,6 +15,13 @@ export const generateResetToken = (payload) => {
   });
 };
 
+// Generate email verification token
+export const generateVerificationToken = (payload) => {
+  return jwt.sign(payload, JWT_CONFIG.secret, {
+    expiresIn: "24h",
+  });
+};
+
 // Verify token
 export const verifyToken = (token) => {
   try {

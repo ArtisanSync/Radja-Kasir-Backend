@@ -3,8 +3,7 @@ import userRoutes from "./userRoutes.js";
 
 const router = express.Router();
 
-// Mount user routes
-router.use("/auth", userRoutes);
+// Mount user routes only
 router.use("/users", userRoutes);
 
 // Health check
