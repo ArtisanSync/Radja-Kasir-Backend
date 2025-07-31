@@ -1,10 +1,12 @@
 import express from "express";
 import userRoutes from "./userRoutes.js";
+import categoryRoutes from "./categoryRoutes.js";
 
 const router = express.Router();
 
-// Mount user routes only
+// Mount routes
 router.use("/users", userRoutes);
+router.use("/categories", categoryRoutes);
 
 // Health check
 router.get("/health", (req, res) => {

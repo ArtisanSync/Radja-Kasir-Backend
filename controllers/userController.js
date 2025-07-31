@@ -57,13 +57,13 @@ export const resendVerification = async (req, res) => {
 // Verify email
 export const verifyUserEmail = async (req, res) => {
   try {
-    const { token } = req.body;
+    const { email, token } = req.body;
 
-    if (!token) {
-      return errorResponse(res, "Verification token is required", 400);
+    if (!email || !token) {
+      return errorResponse(res, "Email and token are required", 400);
     }
 
-    const result = await verifyEmail(token);
+    const result = await verifyEmail(email, token);
     return successResponse(res, result, "Email verified successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
@@ -135,17 +135,17 @@ export const resendResetPassword = async (req, res) => {
 // Reset password
 export const resetUserPassword = async (req, res) => {
   try {
-    const { token, password } = req.body;
+    const { email, token, password } = req.body;
 
-    if (!token || !password) {
-      return errorResponse(res, "Token and new password are required", 400);
+    if (!email || !token || !password) {
+      return errorResponse(res, "Email, token and password are required", 400);
     }
 
     if (password.length < 6) {
       return errorResponse(res, "Password must be at least 6 characters", 400);
     }
 
-    await resetPassword(token, password);
+    await resetPassword(email, token, password);
     return successResponse(res, null, "Password reset successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
@@ -180,7 +180,7 @@ export const getUsers = async (req, res) => {
   }
 };
 
-// Get current user profile with all relations
+// Get profile
 export const getProfile = async (req, res) => {
   try {
     const userId = req.user.id;

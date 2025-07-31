@@ -11,6 +11,17 @@ enum UserRole {
   ADMIN
   USER
   MEMBER
+} 
+
+model Unit {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  variants ProductVariant[]
+
+  @@map("units")
 }
 
 model Category {
@@ -25,16 +36,6 @@ model Category {
 
   @@index([storeId])
   @@map("categories")
-}
-
-model CategoryPost {
-  id         String   @id @default(cuid())
-  categoryId String
-  productId  String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@map("category_post")
 }
 
 model Customer {
@@ -157,10 +158,10 @@ model Post {
 model ProductVariant {
   id              String   @id @default(cuid())
   productId       String
+  unitId          String 
   image           String?
   name            String   @default("0")
   quantity        Int      @default(0)
-  qtyType         String?
   capitalPrice    Decimal  @default(0.00)
   price           Decimal  @default(0.00)
   tax             Int      @default(0)
@@ -170,8 +171,10 @@ model ProductVariant {
   updatedAt       DateTime @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unit    Unit    @relation(fields: [unitId], references: [id])
 
   @@index([productId])
+  @@index([unitId])
   @@map("product_variants")
 }
 
