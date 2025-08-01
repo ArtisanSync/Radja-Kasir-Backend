@@ -1,4 +1,5 @@
 import { successResponse, errorResponse } from "../utils/response.js";
+import { validatePassword } from "../utils/validation.js";
 import {
   registerUser,
   resendVerificationToken,
@@ -18,19 +19,22 @@ export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
+    // Check required fields
     if (!name || !email || !password) {
       return errorResponse(res, "Name, email, and password are required", 400);
     }
 
-    if (password.length < 6) {
-      return errorResponse(res, "Password must be at least 6 characters", 400);
+    // Validate password strength
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return errorResponse(res, passwordError, 400);
     }
 
     const result = await registerUser({ name, email, password });
     return successResponse(
       res,
       result,
-      "Registration successful. Please verify your email.",
+      "Registration successful. Please check your email to verify your account.",
       201
     );
   } catch (error) {
@@ -44,11 +48,15 @@ export const resendVerification = async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-      return errorResponse(res, "Email is required", 400);
+      return errorResponse(res, "Email address is required", 400);
     }
 
     await resendVerificationToken(email);
-    return successResponse(res, null, "Verification token sent to your email");
+    return successResponse(
+      res,
+      null,
+      "Verification token has been sent to your email"
+    );
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
@@ -60,11 +68,19 @@ export const verifyUserEmail = async (req, res) => {
     const { email, token } = req.body;
 
     if (!email || !token) {
-      return errorResponse(res, "Email and token are required", 400);
+      return errorResponse(
+        res,
+        "Email and verification token are required",
+        400
+      );
     }
 
     const result = await verifyEmail(email, token);
-    return successResponse(res, result, "Email verified successfully");
+    return successResponse(
+      res,
+      result,
+      "Email verified successfully. You can now login."
+    );
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
@@ -80,7 +96,7 @@ export const login = async (req, res) => {
     }
 
     const result = await loginUser(email, password);
-    return successResponse(res, result, "Login successful");
+    return successResponse(res, result, "Login successful. Welcome back!");
   } catch (error) {
     return errorResponse(res, error.message, 401);
   }
@@ -92,6 +108,14 @@ export const updateProfile = async (req, res) => {
     const userId = req.user.id;
     const updateData = req.body;
     const file = req.file;
+
+    // Validate password if provided
+    if (updateData.password) {
+      const passwordError = validatePassword(updateData.password);
+      if (passwordError) {
+        return errorResponse(res, passwordError, 400);
+      }
+    }
 
     const user = await updateUser(userId, updateData, file);
     return successResponse(res, user, "Profile updated successfully");
@@ -106,11 +130,15 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-      return errorResponse(res, "Email is required", 400);
+      return errorResponse(res, "Email address is required", 400);
     }
 
     await requestPasswordReset(email);
-    return successResponse(res, null, "Reset token sent to your email");
+    return successResponse(
+      res,
+      null,
+      "Password reset token has been sent to your email"
+    );
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
@@ -122,11 +150,15 @@ export const resendResetPassword = async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-      return errorResponse(res, "Email is required", 400);
+      return errorResponse(res, "Email address is required", 400);
     }
 
     await resendResetToken(email);
-    return successResponse(res, null, "Reset token sent to your email");
+    return successResponse(
+      res,
+      null,
+      "Password reset token has been resent to your email"
+    );
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
@@ -138,15 +170,25 @@ export const resetUserPassword = async (req, res) => {
     const { email, token, password } = req.body;
 
     if (!email || !token || !password) {
-      return errorResponse(res, "Email, token and password are required", 400);
+      return errorResponse(
+        res,
+        "Email, token and new password are required",
+        400
+      );
     }
 
-    if (password.length < 6) {
-      return errorResponse(res, "Password must be at least 6 characters", 400);
+    // Validate new password strength
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return errorResponse(res, passwordError, 400);
     }
 
     await resetPassword(email, token, password);
-    return successResponse(res, null, "Password reset successfully");
+    return successResponse(
+      res,
+      null,
+      "Password reset successful. You can now login with your new password."
+    );
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }

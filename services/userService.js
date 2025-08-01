@@ -15,7 +15,9 @@ export const registerUser = async (userData) => {
   // Check existing user
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
-    throw new Error("Email already registered");
+    throw new Error(
+      "Email is already registered. Please use a different email or login."
+    );
   }
 
   const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -36,12 +38,13 @@ export const registerUser = async (userData) => {
   const emailSent = await sendVerificationEmail(email, verificationToken, name);
   if (!emailSent) {
     await prisma.user.delete({ where: { id: user.id } });
-    throw new Error("Failed to send verification email");
+    throw new Error("Failed to send verification email. Please try again.");
   }
 
   return {
     user,
-    message: "Registration successful. Check email to verify account.",
+    message:
+      "Registration successful. Please check your email to verify your account.",
   };
 };
 
@@ -52,7 +55,7 @@ export const resendVerificationToken = async (email) => {
   });
 
   if (!user) {
-    throw new Error("User not found or already verified");
+    throw new Error("User not found or email is already verified");
   }
 
   const verificationToken = generateRandomToken();
@@ -69,7 +72,7 @@ export const resendVerificationToken = async (email) => {
     user.name
   );
   if (!emailSent) {
-    throw new Error("Failed to send verification email");
+    throw new Error("Failed to send verification email. Please try again.");
   }
 
   return true;
@@ -86,13 +89,17 @@ export const verifyEmail = async (email, token) => {
   });
 
   if (!user) {
-    throw new Error("Invalid email or token");
+    throw new Error(
+      "Invalid email or verification token. Please check your credentials."
+    );
   }
 
   // Check token expiry (24 hours)
   const tokenAge = Date.now() - user.updatedAt.getTime();
   if (tokenAge > TOKEN_CONFIG.verificationExpiry) {
-    throw new Error("Verification token expired");
+    throw new Error(
+      "Verification token has expired. Please request a new one."
+    );
   }
 
   // Update as verified
@@ -121,17 +128,21 @@ export const verifyEmail = async (email, token) => {
 export const loginUser = async (email, password) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    throw new Error("Invalid credentials");
+    throw new Error(
+      "Invalid email or password. Please check your credentials."
+    );
   }
 
   // Check email verified
   if (!user.emailVerifiedAt) {
-    throw new Error("Please verify your email before logging in");
+    throw new Error("Please verify your email address before logging in");
   }
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
-    throw new Error("Invalid credentials");
+    throw new Error(
+      "Invalid email or password. Please check your credentials."
+    );
   }
 
   const token = generateToken({ userId: user.id, email: user.email });
@@ -185,7 +196,7 @@ export const updateUser = async (userId, updateData, file) => {
 export const requestPasswordReset = async (email) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    throw new Error("User with this email not found");
+    throw new Error("No account found with this email address");
   }
 
   const resetToken = generateRandomToken();
@@ -201,7 +212,7 @@ export const requestPasswordReset = async (email) => {
     user.name
   );
   if (!emailSent) {
-    throw new Error("Failed to send reset email");
+    throw new Error("Failed to send password reset email. Please try again.");
   }
 
   return true;
@@ -211,7 +222,7 @@ export const requestPasswordReset = async (email) => {
 export const resendResetToken = async (email) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    throw new Error("User with this email not found");
+    throw new Error("No account found with this email address");
   }
 
   const resetToken = generateRandomToken();
@@ -227,7 +238,7 @@ export const resendResetToken = async (email) => {
     user.name
   );
   if (!emailSent) {
-    throw new Error("Failed to send reset email");
+    throw new Error("Failed to send password reset email. Please try again.");
   }
 
   return true;
@@ -243,13 +254,17 @@ export const resetPassword = async (email, token, newPassword) => {
   });
 
   if (!user) {
-    throw new Error("Invalid email or token");
+    throw new Error(
+      "Invalid email or reset token. Please check your credentials."
+    );
   }
 
   // Check token expiry (15 minutes)
   const tokenAge = Date.now() - user.updatedAt.getTime();
   if (tokenAge > TOKEN_CONFIG.resetExpiry) {
-    throw new Error("Reset token expired");
+    throw new Error(
+      "Reset token has expired. Please request a new password reset."
+    );
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
@@ -282,7 +297,7 @@ export const deleteUser = async (userId, currentUser) => {
 
   // Prevent self-deletion
   if (currentUser.id === userId) {
-    throw new Error("Cannot delete yourself");
+    throw new Error("You cannot delete your own account");
   }
 
   await prisma.user.delete({ where: { id: userId } });
@@ -292,7 +307,7 @@ export const deleteUser = async (userId, currentUser) => {
 // Get all users (admin only)
 export const getAllUsers = async (currentUser) => {
   if (currentUser.role !== "ADMIN") {
-    throw new Error("Only admins can view all users");
+    throw new Error("Only administrators can view all users");
   }
 
   const users = await prisma.user.findMany({
@@ -362,7 +377,7 @@ export const getUserProfile = async (userId) => {
   });
 
   if (!user) {
-    throw new Error("User not found");
+    throw new Error("User profile not found");
   }
 
   return user;
