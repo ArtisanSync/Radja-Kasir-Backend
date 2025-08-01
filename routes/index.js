@@ -7,6 +7,7 @@ const router = express.Router();
 
 // Mount routes
 router.use("/users", userRoutes);
+router.use("/stores", storeRoutes);
 router.use("/categories", categoryRoutes);
 router.use("/products", productRoutes);
 
