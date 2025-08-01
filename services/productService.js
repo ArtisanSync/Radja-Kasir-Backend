@@ -16,8 +16,6 @@ export const createProduct = async (productData, file, userId) => {
     quantity,
     storeId
   } = productData;
-
-  // Validate store ownership
   const store = await prisma.store.findFirst({
     where: { 
       id: storeId,
@@ -39,8 +37,6 @@ export const createProduct = async (productData, file, userId) => {
   if (!unit) {
     throw new Error("Unit not found");
   }
-
-  // Check product code uniqueness if provided
   if (code) {
     const existingProduct = await prisma.product.findFirst({
       where: { code, storeId }
@@ -49,8 +45,6 @@ export const createProduct = async (productData, file, userId) => {
       throw new Error("Product code already exists in this store");
     }
   }
-
-  // Validate category if provided
   if (categoryId) {
     const category = await prisma.category.findFirst({
       where: { id: categoryId, storeId }
@@ -60,22 +54,8 @@ export const createProduct = async (productData, file, userId) => {
     }
   }
 
-  // Validate business logic
-  if (parseFloat(capitalPrice) > parseFloat(price)) {
-    throw new Error("Capital price should not exceed selling price");
-  }
-
-  if (discountRp && parseFloat(discountRp) >= parseFloat(price)) {
-    throw new Error("Discount amount cannot exceed selling price");
-  }
-
-  if (discountPercent && (parseInt(discountPercent) < 0 || parseInt(discountPercent) > 100)) {
-    throw new Error("Discount percentage must be between 0 and 100");
-  }
-
   let imageUrl = null;
 
-  // Upload image if provided
   if (file) {
     try {
       const uploadResponse = await imagekit.upload({
@@ -91,7 +71,6 @@ export const createProduct = async (productData, file, userId) => {
     }
   }
 
-  // Create product with variant in transaction
   const result = await prisma.$transaction(async (tx) => {
     const product = await tx.product.create({
       data: {
@@ -102,10 +81,6 @@ export const createProduct = async (productData, file, userId) => {
         categoryId: categoryId || null,
         storeId,
       },
-      include: {
-        category: true,
-        store: true,
-      },
     });
 
     const variant = await tx.productVariant.create({
@@ -113,19 +88,27 @@ export const createProduct = async (productData, file, userId) => {
         productId: product.id,
         unitId,
         name: "Default",
-        quantity: parseInt(quantity),
-        capitalPrice: parseFloat(capitalPrice),
-        price: parseFloat(price),
-        discountPercent: parseInt(discountPercent),
-        discountRp: parseFloat(discountRp),
+        quantity: parseInt(quantity) || 0,
+        capitalPrice: parseFloat(capitalPrice) || 0,
+        price: parseFloat(price) || 0,
+        discountPercent: parseInt(discountPercent) || 0,
+        discountRp: parseFloat(discountRp) || 0,
         image: imageUrl,
-      },
-      include: {
-        unit: true,
       },
     });
 
-    return { ...product, variants: [variant] };
+    return await tx.product.findUnique({
+      where: { id: product.id },
+      include: {
+        category: true,
+        store: true,
+        variants: {
+          include: {
+            unit: true,
+          },
+        },
+      },
+    });
   });
 
   return result;
@@ -143,7 +126,6 @@ export const getProductsByStore = async (storeId, userId, filters = {}) => {
     stockThreshold = 10
   } = filters;
 
-  // Validate store access
   const store = await prisma.store.findFirst({
     where: { 
       id: storeId,
@@ -226,8 +208,6 @@ export const getProductById = async (productId, userId) => {
   if (!product) {
     throw new Error("Product not found");
   }
-
-  // Validate store access
   const hasAccess = await prisma.store.findFirst({
     where: { 
       id: product.storeId,
@@ -264,7 +244,6 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     isFavorite
   } = updateData;
 
-  // Validate code uniqueness if changed
   if (code && code !== existingProduct.code) {
     const codeExists = await prisma.product.findFirst({
       where: { 
@@ -278,7 +257,6 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
   }
 
-  // Validate category if provided
   if (categoryId) {
     const category = await prisma.category.findFirst({
       where: { id: categoryId, storeId: existingProduct.storeId }
@@ -288,7 +266,6 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
   }
 
-  // Validate unit if provided
   if (unitId) {
     const unit = await prisma.unit.findUnique({
       where: { id: unitId }
@@ -298,7 +275,6 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
   }
 
-  // Business logic validation
   if (capitalPrice && price && parseFloat(capitalPrice) > parseFloat(price)) {
     throw new Error("Capital price should not exceed selling price");
   }
@@ -348,7 +324,6 @@ export const updateProduct = async (productId, updateData, file, userId) => {
       },
     });
 
-    // Update first variant if variant data provided
     if (existingProduct.variants.length > 0) {
       const variantData = {};
       
