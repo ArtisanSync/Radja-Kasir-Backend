@@ -23,7 +23,7 @@ async function main() {
 
   // 2. Seed Admin User
   console.log("👑 Seeding Admin User...");
-  const adminPassword = await bcrypt.hash("admin123", 10);
+  const adminPassword = await bcrypt.hash("@Admin123", 10);
 
   let adminUser;
   try {
@@ -51,7 +51,7 @@ async function main() {
 
   // 3. Seed Test User with Subscription
   console.log("👤 Seeding Test User...");
-  const userPassword = await bcrypt.hash("user123", 10);
+  const userPassword = await bcrypt.hash("@User123", 10);
 
   let testUser;
   try {
@@ -186,12 +186,12 @@ async function main() {
   console.log("==================");
   console.log("👑 Admin Account:");
   console.log(`   Email: admin@radjakasir.com`);
-  console.log(`   Password: admin123`);
+  console.log(`   Password: @Admin123`);
   console.log(`   Role: ADMIN`);
   console.log("");
   console.log("👤 Test User Account:");
   console.log(`   Email: user@test.com`);
-  console.log(`   Password: user123`);
+  console.log(`   Password: @User123`);
   console.log(`   Role: USER`);
   console.log("");
   console.log("🏪 Test Stores:");
