@@ -16,6 +16,47 @@ export const createProduct = async (productData, file, userId) => {
     quantity,
     storeId
   } = productData;
+
+  if (!name || name.trim().length === 0) {
+    throw new Error("Product name is required");
+  }
+
+  if (!price || parseFloat(price) <= 0) {
+    throw new Error("Selling price must be greater than 0");
+  }
+
+  if (capitalPrice && parseFloat(capitalPrice) < 0) {
+    throw new Error("Capital price cannot be negative");
+  }
+
+  if (capitalPrice && price && parseFloat(capitalPrice) > parseFloat(price)) {
+    throw new Error("Capital price should not exceed selling price");
+  }
+
+  if (quantity && parseInt(quantity) < 0) {
+    throw new Error("Quantity cannot be negative");
+  }
+
+  // Validate discount
+  const numDiscountPercent = parseFloat(discountPercent) || 0;
+  const numDiscountRp = parseFloat(discountRp) || 0;
+
+  if (numDiscountPercent > 0 && numDiscountRp > 0) {
+    throw new Error("Cannot apply both percentage and amount discount simultaneously");
+  }
+
+  if (numDiscountPercent < 0 || numDiscountPercent > 100) {
+    throw new Error("Discount percentage must be between 0-100");
+  }
+
+  if (numDiscountRp < 0) {
+    throw new Error("Discount amount must be positive");
+  }
+
+  if (numDiscountRp >= parseFloat(price)) {
+    throw new Error("Discount amount cannot exceed selling price");
+  }
+
   const store = await prisma.store.findFirst({
     where: { 
       id: storeId,
@@ -37,14 +78,16 @@ export const createProduct = async (productData, file, userId) => {
   if (!unit) {
     throw new Error("Unit not found");
   }
+
   if (code) {
     const existingProduct = await prisma.product.findFirst({
-      where: { code, storeId }
+      where: { code, storeId, active: true }
     });
     if (existingProduct) {
       throw new Error("Product code already exists in this store");
     }
   }
+
   if (categoryId) {
     const category = await prisma.category.findFirst({
       where: { id: categoryId, storeId }
@@ -61,20 +104,21 @@ export const createProduct = async (productData, file, userId) => {
       const uploadResponse = await imagekit.upload({
         file: file.buffer,
         fileName: `product_${Date.now()}`,
-        folder: "/products",
+        folder: `/products/${store.id}`,
         useUniqueFileName: true,
         transformation: { pre: "w-500,h-500,c-maintain_ratio" },
       });
       imageUrl = uploadResponse.url;
     } catch (error) {
       console.error("Image upload failed:", error);
+      throw new Error("Failed to upload product image");
     }
   }
 
   const result = await prisma.$transaction(async (tx) => {
     const product = await tx.product.create({
       data: {
-        name,
+        name: name.trim(),
         code: code || null,
         brand: brand || null,
         image: imageUrl,
@@ -83,19 +127,19 @@ export const createProduct = async (productData, file, userId) => {
       },
     });
 
-    const variant = await tx.productVariant.create({
-      data: {
-        productId: product.id,
-        unitId,
-        name: "Default",
-        quantity: parseInt(quantity) || 0,
-        capitalPrice: parseFloat(capitalPrice) || 0,
-        price: parseFloat(price) || 0,
-        discountPercent: parseInt(discountPercent) || 0,
-        discountRp: parseFloat(discountRp) || 0,
-        image: imageUrl,
-      },
-    });
+  await tx.productVariant.create({
+  data: {
+    productId: product.id,
+    unitId,
+    name: "Default",
+    quantity: parseInt(quantity) || 0,
+    capitalPrice: parseFloat(capitalPrice) || 0,
+    price: parseFloat(price) || 0,
+    discountPercent: parseFloat(discountPercent) || 0,
+    discountRp: parseFloat(discountRp) || 0,
+    image: imageUrl,
+  },
+});
 
     return await tx.product.findUnique({
       where: { id: product.id },
@@ -208,6 +252,7 @@ export const getProductById = async (productId, userId) => {
   if (!product) {
     throw new Error("Product not found");
   }
+
   const hasAccess = await prisma.store.findFirst({
     where: { 
       id: product.storeId,
@@ -244,12 +289,51 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     isFavorite
   } = updateData;
 
+  if (name !== undefined && (!name || name.trim().length === 0)) {
+    throw new Error("Product name cannot be empty");
+  }
+
+  if (price !== undefined && parseFloat(price) <= 0) {
+    throw new Error("Selling price must be greater than 0");
+  }
+
+  if (capitalPrice !== undefined && parseFloat(capitalPrice) < 0) {
+    throw new Error("Capital price cannot be negative");
+  }
+
+  if (quantity !== undefined && parseInt(quantity) < 0) {
+    throw new Error("Quantity cannot be negative");
+  }
+
+  if (discountPercent !== undefined || discountRp !== undefined) {
+    const currentPrice = price !== undefined ? parseFloat(price) : parseFloat(existingProduct.variants[0]?.price || 0);
+    const currentDiscountPercent = discountPercent !== undefined ? parseFloat(discountPercent) : parseFloat(existingProduct.variants[0]?.discountPercent || 0);
+    const currentDiscountRp = discountRp !== undefined ? parseFloat(discountRp) : parseFloat(existingProduct.variants[0]?.discountRp || 0);
+
+    if (currentDiscountPercent > 0 && currentDiscountRp > 0) {
+      throw new Error("Cannot apply both percentage and amount discount simultaneously");
+    }
+
+    if (currentDiscountPercent < 0 || currentDiscountPercent > 100) {
+      throw new Error("Discount percentage must be between 0-100");
+    }
+
+    if (currentDiscountRp < 0) {
+      throw new Error("Discount amount must be positive");
+    }
+
+    if (currentDiscountRp >= currentPrice) {
+      throw new Error("Discount amount cannot exceed selling price");
+    }
+  }
+
   if (code && code !== existingProduct.code) {
     const codeExists = await prisma.product.findFirst({
       where: { 
         code, 
         storeId: existingProduct.storeId,
-        id: { not: productId }
+        id: { not: productId },
+        active: true
       }
     });
     if (codeExists) {
@@ -291,13 +375,14 @@ export const updateProduct = async (productId, updateData, file, userId) => {
       const uploadResponse = await imagekit.upload({
         file: file.buffer,
         fileName: `product_${productId}_${Date.now()}`,
-        folder: "/products",
+        folder: `/products/${existingProduct.storeId}`,
         useUniqueFileName: true,
         transformation: { pre: "w-500,h-500,c-maintain_ratio" },
       });
       imageUrl = uploadResponse.url;
     } catch (error) {
       console.error("Image upload failed:", error);
+      throw new Error("Failed to upload product image");
     }
   }
 
@@ -306,7 +391,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     const product = await tx.product.update({
       where: { id: productId },
       data: {
-        ...(name && { name }),
+        ...(name && { name: name.trim() }),
         ...(code !== undefined && { code }),
         ...(brand !== undefined && { brand }),
         ...(imageUrl !== existingProduct.image && { image: imageUrl }),
@@ -331,7 +416,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
       if (quantity !== undefined) variantData.quantity = parseInt(quantity);
       if (capitalPrice !== undefined) variantData.capitalPrice = parseFloat(capitalPrice);
       if (price !== undefined) variantData.price = parseFloat(price);
-      if (discountPercent !== undefined) variantData.discountPercent = parseInt(discountPercent);
+      if (discountPercent !== undefined) variantData.discountPercent = parseFloat(discountPercent);
       if (discountRp !== undefined) variantData.discountRp = parseFloat(discountRp);
       if (imageUrl !== existingProduct.image) variantData.image = imageUrl;
 
