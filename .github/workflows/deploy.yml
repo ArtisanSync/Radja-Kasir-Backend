@@ -78,7 +78,6 @@ jobs:
             --set-env-vars SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
             --set-env-vars SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}" \
             --set-env-vars SUPABASE_STORAGE_BUCKET="${{ secrets.SUPABASE_STORAGE_BUCKET }}" \
-            --set-env-vars CORS_ORIGIN="${{ secrets.CORS_ORIGIN }}" \
             --set-env-vars IMAGEKIT_PUBLIC_KEY="${{ secrets.IMAGEKIT_PUBLIC_KEY }}" \
             --set-env-vars IMAGEKIT_PRIVATE_KEY="${{ secrets.IMAGEKIT_PRIVATE_KEY }}" \
             --set-env-vars IMAGEKIT_URL_ENDPOINT="${{ secrets.IMAGEKIT_URL_ENDPOINT }}" \
