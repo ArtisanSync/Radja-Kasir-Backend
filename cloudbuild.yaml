@@ -78,8 +78,6 @@ steps:
       - "--set-env-vars"
       - "IMAGEKIT_URL_ENDPOINT=${_IMAGEKIT_URL_ENDPOINT}"
       - "--set-env-vars"
-      - "CORS_ORIGIN=${_CORS_ORIGIN}"
-      - "--service-account"
       - "${_SERVICE_ACCOUNT}"
       - "EMAIL_USER=${EMAIL_USER}"
       - "--set-env-vars"
