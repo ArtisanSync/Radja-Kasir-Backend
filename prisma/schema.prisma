@@ -11,8 +11,74 @@ enum UserRole {
   ADMIN
   USER
   MEMBER
-} 
+}
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  TRIAL
+}
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
 
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  EXPIRED
+}
+model SubscriptionPackage {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  displayName String 
+  price       Decimal  @default(0.00)
+  maxUsers    Int      @default(1)
+  maxMembers  Int      @default(3)
+  maxStores   Int      @default(1)
+  features    Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions Subscribe[]
+
+  @@map("subscription_packages")
+}
+model Payment {
+  id               String        @id @default(cuid())
+  userId           String
+  subscriptionId   String?
+  orderId          String?
+  merchantCode     String 
+  reference        String        @unique
+  paymentAmount    Decimal
+  paymentMethod    String?
+  merchantOrderId  String        @unique
+  productDetail    String
+  paymentUrl       String?
+  returnUrl        String?
+  callbackUrl      String?
+  expiryPeriod     Int           @default(1440)
+  signature        String?
+  status           PaymentStatus @default(PENDING)
+  statusMessage    String?
+  paidAt           DateTime?
+  expiredAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscribe?    @relation(fields: [subscriptionId], references: [id])
+  order        Order?        @relation(fields: [orderId], references: [id])
+
+  @@index([userId])
+  @@index([merchantOrderId])
+  @@index([reference])
+  @@map("payments")
+}
 model Unit {
   id        String   @id @default(cuid())
   name      String   @unique
@@ -59,33 +125,43 @@ model OrderDebt {
   id           String   @id @default(cuid())
   orderId      String
   storeId      String
-  customerId   String
+  customerId   String?
   customerName String
-  phone        String
-  total        Int      @default(0)
-  paid         Boolean  @default(false)
+  phone        String?
+  totalAmount  Decimal  @default(0.00)
+  paidAmount   Decimal  @default(0.00)
+  remainingAmount Decimal @default(0.00)
+  isPaid       Boolean  @default(false)
+  dueDate      DateTime?
+  notes        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@index([orderId])
   @@index([storeId])
-  @@map("order_depts")
+  @@map("order_debts")
 }
-
 model OrderDetail {
   id           String   @id @default(cuid())
   orderId      String
   variantId    String
   productName  String
-  capitalPrice Int      @default(0)
-  discount     Int?
-  unitPrice    Int      @default(0)
+  variantName  String   @default("Default")
+  capitalPrice Decimal  @default(0.00)
+  unitPrice    Decimal  @default(0.00)
   quantity     Int
-  total        Int
+  discount     Decimal  @default(0.00)
+  total        Decimal  @default(0.00)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([variantId])
   @@map("order_details")
 }
 
@@ -107,22 +183,25 @@ model OrderPayment {
 
 model Order {
   id           String   @id @default(cuid())
-  invNumber    String?
+  orderNumber  String   @unique
   storeId      String
-  storeName    String?
   customerId   String?
   customerName String?
-  paymentType  String
-  ppn          Int      @default(0)
-  subTotal     String
-  total        String   @default("0")
-  status       String   @default("draft")
+  orderType    String   @default("SALE")
+  status       String   @default("DRAFT")
+  notes        String?
+  createdBy    String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store    Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  details  OrderDetail[]
+  debts    OrderDebt[]
+  payments Payment[]
 
   @@index([storeId])
+  @@index([customerId])
+  @@index([orderNumber])
   @@map("orders")
 }
 
@@ -184,9 +263,10 @@ model Product {
   storeId    String
   image      String?
   name       String
-  code       String?
+  code       String?  @unique
   brand      String?
-  active     Boolean  @default(true)
+  description String?
+  isActive   Boolean  @default(true)
   isFavorite Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -196,46 +276,41 @@ model Product {
   variants ProductVariant[]
 
   @@index([storeId])
+  @@index([code])
   @@map("products")
 }
 
-model StoreMember {
-  id        String   @id @default(cuid())
-  storeId   String
-  userId    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model StoreSetting {
+  id         String   @id @default(cuid())
+  storeId    String   @unique
+  tax        Decimal  @default(0.00)
+  currency   String   @default("IDR")
+  timezone   String   @default("Asia/Jakarta")
+  receiptConfig Json?
+  notifications Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([storeId])
-  @@index([userId])
-  @@map("store_members")
-}
-
-model StoreSetting {
-  id        String   @id @default(cuid())
-  storeId   String
-  tax       Int      @default(0)
-  meta      Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@map("store_settings")
 }
 
 model Store {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  storeType String?
-  address   String?
-  whatsapp  String?
-  logo      String?
-  stamp     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  storeType   String?
+  description String?
+  address     String?
+  phone       String?
+  whatsapp    String?
+  email       String?
+  logo        String?
+  stamp       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   categories Category[]
@@ -243,21 +318,78 @@ model Store {
   products   Product[]
   orders     Order[]
   members    StoreMember[]
+  settings   StoreSetting?
 
+  @@index([userId])
   @@map("stores")
 }
 
-model Subscribe {
+model StoreMember {
   id        String   @id @default(cuid())
+  storeId   String
   userId    String
-  packageId String
-  endDate   DateTime
+  role      String   @default("CASHIER")
+  permissions Json?
+  isActive  Boolean  @default(true)
+  joinedAt  DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("subscribes")
+  @@unique([storeId, userId])
+  @@index([storeId])
+  @@index([userId])
+  @@map("store_members")
+}
+
+model InviteCode {
+  id           String      @id @default(cuid())
+  storeId      String
+  invitedBy    String
+  invitedEmail String
+  code         String      @unique
+  role         String      @default("CASHIER")
+  status       InviteStatus @default(PENDING)
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedBy   String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([storeId])
+  @@index([code])
+  @@map("invite_codes")
+}
+model Subscribe {
+  id          String            @id @default(cuid())
+  userId      String
+  packageId   String
+  status      SubscriptionStatus @default(TRIAL)
+  startDate   DateTime          @default(now())
+  endDate     DateTime
+  isTrial     Boolean           @default(false)
+  trialEndDate DateTime?
+  autoRenew   Boolean           @default(false)
+  cancelledAt DateTime?
+  isNewUserPromo Boolean         @default(false)
+  paidMonths     Int             @default(1)
+  bonusMonths    Int             @default(0) 
+  totalMonths    Int             @default(1)
+  isUpgrade        Boolean       @default(false)
+  previousPackageId String?
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  package  SubscriptionPackage @relation(fields: [packageId], references: [id])
+  payments Payment[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("subscriptions")
 }
 
 model User {
@@ -266,17 +398,23 @@ model User {
   email           String    @unique
   avatar          String?
   role            UserRole  @default(USER)
-  isMember        Boolean   @default(false)
-  isSubscribe     Boolean   @default(false)
+  phone           String?
+  businessName    String?
+  businessType    String?
+  businessAddress String?
+  whatsapp        String?
+  isActive        Boolean   @default(true)
   emailVerifiedAt DateTime?
   password        String
   rememberToken   String?
+  lastLoginAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   stores       Store[]
   storeMembers StoreMember[]
-  subscribes   Subscribe[]
+  subscriptions Subscribe[]
+  payments     Payment[]
 
   @@map("users")
 }
