@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  createFirstStoreController,
   createNewStore,
   getMyStores,
   getStoreDetails,
@@ -8,35 +9,19 @@ import {
   getAllStoresAdmin,
 } from "../controllers/storeController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
-import {
-  requireSubscription,
-  requireAdminOrSubscription,
-} from "../middlewares/subscriptionMiddleware.js";
 import { authorizeAdmin } from "../middlewares/roleMiddleware.js";
 
 const router = express.Router();
 
-// Protected routes - require authentication and subscription
-router.post("/", authenticateToken, requireSubscription, createNewStore);
-router.get("/my-stores", authenticateToken, requireSubscription, getMyStores);
-router.get(
-  "/:storeId",
-  authenticateToken,
-  requireAdminOrSubscription,
-  getStoreDetails
-);
-router.put(
-  "/:storeId",
-  authenticateToken,
-  requireAdminOrSubscription,
-  updateStoreDetails
-);
-router.delete(
-  "/:storeId",
-  authenticateToken,
-  requireAdminOrSubscription,
-  deleteStoreById
-);
+// Create first store (for new users)
+router.post("/first", authenticateToken, createFirstStoreController);
+
+// Protected routes
+router.post("/", authenticateToken, createNewStore);
+router.get("/my-stores", authenticateToken, getMyStores);
+router.get("/:storeId", authenticateToken, getStoreDetails);
+router.put("/:storeId", authenticateToken, updateStoreDetails);
+router.delete("/:storeId", authenticateToken, deleteStoreById);
 
 // Admin only routes
 router.get("/", authenticateToken, authorizeAdmin, getAllStoresAdmin);
