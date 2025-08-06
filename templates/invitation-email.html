@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Store Invitation - Radja Kasir</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        background-color: #f5f7fa;
+        margin: 0;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .email-wrapper {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      }
+      .header {
+        background: linear-gradient(135deg, #1eb5e6 0%, #1e88e5 100%);
+        color: white;
+        text-align: center;
+        padding: 40px 30px;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 600;
+      }
+      .content {
+        padding: 40px 30px;
+      }
+      .greeting {
+        color: #2c3e50;
+        font-size: 16px;
+        margin-bottom: 20px;
+      }
+      .message {
+        color: #5a6c7d;
+        font-size: 16px;
+        margin-bottom: 30px;
+        line-height: 1.7;
+      }
+      .token-container {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        margin: 30px 0;
+        border: 1px solid #e9ecef;
+      }
+      .token-label {
+        color: #6c757d;
+        font-size: 14px;
+        margin-bottom: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 500;
+      }
+      .token {
+        font-size: 32px;
+        font-weight: bold;
+        color: #1e88e5;
+        letter-spacing: 4px;
+        font-family: 'Courier New', monospace;
+        margin: 10px 0;
+      }
+      .store-info {
+        background: #e3f2fd;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+        color: #1565c0;
+      }
+      .warning {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 25px 0;
+        color: #856404;
+        font-size: 14px;
+      }
+      .footer {
+        background: #f8f9fa;
+        text-align: center;
+        padding: 25px 30px;
+        border-top: 1px solid #e9ecef;
+      }
+      .footer p {
+        margin: 0;
+        color: #9ca3af;
+        font-size: 13px;
+      }
+      .brand {
+        color: #1e88e5;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-wrapper">
+      <div class="header">
+        <h1>Store Invitation</h1>
+      </div>
+      
+      <div class="content">
+        <div class="greeting">
+          Hello!
+        </div>
+        
+        <div class="message">
+          {{inviterName}} has invited you to join <strong>{{storeName}}</strong> as a team member on Radja Kasir.
+        </div>
+
+        <div class="store-info">
+          <strong>Store:</strong> {{storeName}}<br>
+          <strong>Invited by:</strong> {{inviterName}}
+        </div>
+
+        <div class="message">
+          To accept this invitation, please use the following code:
+        </div>
+
+        <div class="token-container">
+          <div class="token-label">Invitation Code:</div>
+          <div class="token">{{inviteCode}}</div>
+        </div>
+
+        <div class="warning">
+          <strong>Important:</strong> This invitation will expire in 7 days.
+        </div>
+        
+        <div class="message">
+          If you don't have a Radja Kasir account yet, please register first using this email address, then use the invitation code above.
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>© 2025 <span class="brand">Radja Kasir</span>. All rights reserved.</p>
+      </div>
+    </div>
+  </body>
+</html>
