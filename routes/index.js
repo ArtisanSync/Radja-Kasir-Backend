@@ -11,6 +11,7 @@ router.use("/users", userRoutes);
 router.use("/stores", storeRoutes);
 router.use("/categories", categoryRoutes);
 router.use("/products", productRoutes);
+router.use("/subscriptions", subscriptionRoutes);
 
 // Health check
 router.get("/health", (req, res) => {
