@@ -1,5 +1,6 @@
 import { successResponse, errorResponse } from "../utils/response.js";
 import {
+  createFirstStore,
   createStore,
   getUserStores,
   getStoreById,
@@ -8,10 +9,23 @@ import {
   getAllStores,
 } from "../services/storeService.js";
 
-// Create new store
+// Create first store (for new users)
+export const createFirstStoreController = async (req, res) => {
+  try {
+    const user = req.user;
+    const storeData = req.body;
+
+    const result = await createFirstStore(storeData, user);
+    return successResponse(res, result, result.message, 201);
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+// Create new store (untuk additional stores)
 export const createNewStore = async (req, res) => {
   try {
-    const { name, storeType, address, whatsapp, logo, stamp } = req.body;
+    const { name, storeType, description, address, phone, whatsapp, email, logo, stamp } = req.body;
     const user = req.user;
 
     if (!name) {
@@ -27,7 +41,7 @@ export const createNewStore = async (req, res) => {
     }
 
     const store = await createStore(
-      { name, storeType, address, whatsapp, logo, stamp },
+      { name, storeType, description, address, phone, whatsapp, email, logo, stamp },
       user
     );
     return successResponse(res, store, "Store created successfully", 201);
@@ -68,7 +82,7 @@ export const getStoreDetails = async (req, res) => {
 export const updateStoreDetails = async (req, res) => {
   try {
     const { storeId } = req.params;
-    const { name, storeType, address, whatsapp, logo, stamp } = req.body;
+    const { name, storeType, description, address, phone, whatsapp, email, logo, stamp } = req.body;
     const user = req.user;
 
     if (!storeId) {
@@ -85,7 +99,7 @@ export const updateStoreDetails = async (req, res) => {
 
     const store = await updateStore(
       storeId,
-      { name, storeType, address, whatsapp, logo, stamp },
+      { name, storeType, description, address, phone, whatsapp, email, logo, stamp },
       user
     );
     return successResponse(res, store, "Store updated successfully");
