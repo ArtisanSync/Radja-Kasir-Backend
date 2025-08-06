@@ -3,6 +3,8 @@ import userRoutes from "./userRoutes.js";
 import categoryRoutes from "./categoryRoutes.js";
 import productRoutes from "./productRoutes.js";
 import storeRoutes from "./storeRoutes.js";
+import subscriptionRoutes from "./subscriptionRoutes.js";
+import inviteRoutes from "./inviteRoutes.js";
 
 const router = express.Router();
 
@@ -12,6 +14,7 @@ router.use("/stores", storeRoutes);
 router.use("/categories", categoryRoutes);
 router.use("/products", productRoutes);
 router.use("/subscriptions", subscriptionRoutes);
+router.use("/invites", inviteRoutes);
 
 // Health check
 router.get("/health", (req, res) => {
