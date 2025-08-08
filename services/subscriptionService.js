@@ -27,6 +27,12 @@ export const getUserActiveSubscription = async (userId) => {
   return subscription;
 };
 
+// Check if user has active subscription (untuk middleware)
+export const hasActiveSubscription = async (userId) => {
+  const subscription = await getUserActiveSubscription(userId);
+  return !!subscription;
+};
+
 // Create subscription for NEW USER (1 bulan bayar + 1 bulan gratis = 2 bulan akses)
 export const createNewUserSubscription = async (userId, packageId) => {
   const subscriptionPackage = await prisma.subscriptionPackage.findUnique({

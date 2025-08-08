@@ -6,7 +6,73 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Starting database seeding...");
 
-  // 1. Seed Units
+  // 1. Seed Subscription Packages (BARU)
+  console.log("💳 Seeding Subscription Packages...");
+  const packages = await Promise.all([
+    prisma.subscriptionPackage.upsert({
+      where: { name: "STANDARD" },
+      update: {},
+      create: {
+        name: "STANDARD",
+        displayName: "Paket Standard",
+        price: 75000,
+        maxUsers: 1,
+        maxMembers: 3,
+        maxStores: 1,
+        features: {
+          invoice: true,
+          reports: true,
+          backup: false,
+          api_access: false,
+        },
+        isActive: true,
+      },
+    }),
+    prisma.subscriptionPackage.upsert({
+      where: { name: "PRO" },
+      update: {},
+      create: {
+        name: "PRO",
+        displayName: "Paket Pro",
+        price: 150000,
+        maxUsers: 1,
+        maxMembers: 5,
+        maxStores: 3,
+        features: {
+          invoice: true,
+          reports: true,
+          backup: true,
+          api_access: false,
+          analytics: true,
+        },
+        isActive: true,
+      },
+    }),
+    prisma.subscriptionPackage.upsert({
+      where: { name: "BUSINESS" },
+      update: {},
+      create: {
+        name: "BUSINESS",
+        displayName: "Paket Bisnis",
+        price: 250000,
+        maxUsers: 1,
+        maxMembers: 7,
+        maxStores: 5,
+        features: {
+          invoice: true,
+          reports: true,
+          backup: true,
+          api_access: true,
+          analytics: true,
+          priority_support: true,
+        },
+        isActive: true,
+      },
+    }),
+  ]);
+  console.log(`✅ Created ${packages.length} subscription packages`);
+
+  // 2. Seed Units
   console.log("📦 Seeding Units...");
   const units = await prisma.unit.createMany({
     data: [
@@ -21,7 +87,7 @@ async function main() {
   });
   console.log(`✅ Created ${units.count} units successfully`);
 
-  // 2. Seed Admin User
+  // 3. Seed Admin User
   console.log("👑 Seeding Admin User...");
   const adminPassword = await bcrypt.hash("@Admin123", 10);
 
@@ -33,7 +99,10 @@ async function main() {
         email: "admin@radjakasir.com",
         password: adminPassword,
         role: "ADMIN",
-        isSubscribe: true,
+        businessName: "Radja Kasir Admin",
+        businessType: "Technology",
+        businessAddress: "Jakarta, Indonesia",
+        whatsapp: "+628111000000",
         emailVerifiedAt: new Date(),
       },
     });
@@ -49,7 +118,7 @@ async function main() {
     }
   }
 
-  // 3. Seed Test User with Subscription
+  // 4. Seed Test User (NEW USER - belum punya toko dan subscription)
   console.log("👤 Seeding Test User...");
   const userPassword = await bcrypt.hash("@User123", 10);
 
@@ -57,11 +126,14 @@ async function main() {
   try {
     testUser = await prisma.user.create({
       data: {
-        name: "Test User",
-        email: "user@test.com",
+        name: "User Test",
+        email: "user@user.com",
         password: userPassword,
         role: "USER",
-        isSubscribe: true,
+        businessName: "Kedai Laris", 
+        businessType: "Restoran",
+        businessAddress: "Jl Taman Sari Perum Batu Raden Asri Blok B No 3",
+        whatsapp: "087704217808",
         emailVerifiedAt: new Date(),
       },
     });
@@ -69,7 +141,7 @@ async function main() {
   } catch (error) {
     if (error.code === "P2002") {
       testUser = await prisma.user.findUnique({
-        where: { email: "user@test.com" },
+        where: { email: "user@user.com" },
       });
       console.log(`⚠️  Test user already exists: ${testUser.email}`);
     } else {
@@ -77,129 +149,135 @@ async function main() {
     }
   }
 
-  // 4. Seed Test Stores
-  console.log("🏪 Seeding Test Stores...");
+  // 5. Create Admin Subscription (Pro - 1 year)
+  console.log("💎 Creating Admin Subscription...");
+  const proPackage = packages.find(p => p.name === "PRO");
 
-  // Admin Store
+  try {
+    await prisma.subscribe.create({
+      data: {
+        userId: adminUser.id,
+        packageId: proPackage.id,
+        status: "ACTIVE",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
+        isTrial: false,
+        isNewUserPromo: false,
+        paidMonths: 12,
+        bonusMonths: 0,
+        totalMonths: 12,
+        autoRenew: true,
+      },
+    });
+    console.log("✅ Admin subscription created");
+  } catch (error) {
+    console.log("⚠️  Admin subscription already exists");
+  }
+
+  // 6. Seed Admin Store
+  console.log("🏪 Seeding Admin Store...");
   let adminStore;
   try {
     adminStore = await prisma.store.create({
       data: {
         name: "Admin Store",
         storeType: "Supermarket",
+        description: "Demo store for admin testing",
         address: "Jl. Admin No. 1, Jakarta Pusat",
+        phone: "+628111000001",
         whatsapp: "+628111000001",
+        email: "admin.store@radjakasir.com",
         userId: adminUser.id,
       },
     });
+
+    // Create store settings for admin store
+    await prisma.storeSetting.create({
+      data: {
+        storeId: adminStore.id,
+        tax: 10,
+        currency: "IDR",
+        timezone: "Asia/Jakarta",
+      },
+    });
+
     console.log(`✅ Admin store created: ${adminStore.name}`);
   } catch (error) {
-    if (error.code === "P2002") {
-      adminStore = await prisma.store.findFirst({
-        where: { name: "Admin Store", userId: adminUser.id },
-      });
-      console.log(`⚠️  Admin store already exists: ${adminStore?.name}`);
-    } else {
-      throw error;
-    }
+    console.log(`⚠️  Admin store might already exist`);
   }
 
-  // User Store 1
-  let userStore1;
-  try {
-    userStore1 = await prisma.store.create({
-      data: {
-        name: "Toko Berkah",
-        storeType: "Retail",
-        address: "Jl. Berkah No. 123, Bandung",
-        whatsapp: "+628222000001",
-        userId: testUser.id,
-      },
-    });
-    console.log(`✅ User store 1 created: ${userStore1.name}`);
-  } catch (error) {
-    if (error.code === "P2002") {
-      userStore1 = await prisma.store.findFirst({
-        where: { name: "Toko Berkah", userId: testUser.id },
-      });
-      console.log(`⚠️  User store 1 already exists: ${userStore1?.name}`);
-    } else {
-      throw error;
-    }
-  }
+  // 7. Seed Sample Categories (for admin store)
+  if (adminStore) {
+    console.log("📁 Seeding Sample Categories...");
 
-  // User Store 2
-  let userStore2;
-  try {
-    userStore2 = await prisma.store.create({
-      data: {
-        name: "Warung Maju",
-        storeType: "Warung",
-        address: "Jl. Maju No. 456, Surabaya",
-        whatsapp: "+628333000001",
-        userId: testUser.id,
-      },
-    });
-    console.log(`✅ User store 2 created: ${userStore2.name}`);
-  } catch (error) {
-    if (error.code === "P2002") {
-      userStore2 = await prisma.store.findFirst({
-        where: { name: "Warung Maju", userId: testUser.id },
-      });
-      console.log(`⚠️  User store 2 already exists: ${userStore2?.name}`);
-    } else {
-      throw error;
-    }
-  }
+    const categories = [
+      { name: "Makanan", storeId: adminStore.id },
+      { name: "Minuman", storeId: adminStore.id },
+      { name: "Snack", storeId: adminStore.id },
+      { name: "Elektronik", storeId: adminStore.id },
+      { name: "Pakaian", storeId: adminStore.id },
+    ];
 
-  // 5. Seed Sample Categories
-  console.log("📁 Seeding Sample Categories...");
-
-  const categories = [
-    { name: "Makanan", storeId: userStore1.id },
-    { name: "Minuman", storeId: userStore1.id },
-    { name: "Snack", storeId: userStore1.id },
-    { name: "Elektronik", storeId: userStore2.id },
-    { name: "Pakaian", storeId: userStore2.id },
-    { name: "Admin Category", storeId: adminStore.id },
-  ];
-
-  for (const category of categories) {
-    try {
-      const newCategory = await prisma.category.create({
-        data: category,
-      });
-      console.log(
-        `✅ Category created: ${newCategory.name} (Store: ${category.storeId})`
-      );
-    } catch (error) {
-      if (error.code === "P2002") {
-        console.log(`⚠️  Category already exists: ${category.name}`);
-      } else {
-        throw error;
+    for (const category of categories) {
+      try {
+        const newCategory = await prisma.category.create({
+          data: category,
+        });
+        console.log(`✅ Category created: ${newCategory.name}`);
+      } catch (error) {
+        if (error.code === "P2002") {
+          console.log(`⚠️  Category already exists: ${category.name}`);
+        } else {
+          throw error;
+        }
       }
     }
   }
 
-  // 6. Summary
+  // 8. Summary
   console.log("\n📊 Seeding Summary:");
   console.log("==================");
+  console.log("💳 Subscription Packages:");
+  console.log("   1. Standard (1 user, 3 members, 1 store) - Rp 50.000");
+  console.log("   2. Pro (1 user, 5 members, 3 stores) - Rp 100.000");
+  console.log("   3. Business (1 user, 7 members, 5 stores) - Rp 200.000");
+  console.log("");
   console.log("👑 Admin Account:");
   console.log(`   Email: admin@radjakasir.com`);
   console.log(`   Password: @Admin123`);
-  console.log(`   Role: ADMIN`);
+  console.log(`   Has Store: Yes (Admin Store)`);
+  console.log(`   Subscription: Pro (1 year)`);
   console.log("");
-  console.log("👤 Test User Account:");
-  console.log(`   Email: user@test.com`);
+  console.log("👤 Test User Account (NEW USER - untuk testing flow):");
+  console.log(`   Email: user@user.com`);
   console.log(`   Password: @User123`);
-  console.log(`   Role: USER`);
+  console.log(`   Has Store: NO - must create first store`);
+  console.log(`   Subscription: None yet - will get promo when completing payment`);
+  console.log(`   Business Profile: Sudah ada sesuai mobile UI`);
   console.log("");
-  console.log("🏪 Test Stores:");
-  console.log(`   1. Admin Store (ID: ${adminStore.id})`);
-  console.log(`   2. Toko Berkah (ID: ${userStore1.id})`);
-  console.log(`   3. Warung Maju (ID: ${userStore2.id})`);
+  console.log("🚀 NEW USER FLOW (sesuai requirement):");
+  console.log("   1. Register (name, email, password)");
+  console.log("   2. Verify email");
+  console.log("   3. Login → hasStore: false, isSubscribed: false");
+  console.log("   4. Frontend: redirect to create first store");
+  console.log("   5. POST /api/v1/stores/first → create store");
+  console.log("   6. POST /api/v1/payments/create → create payment");
+  console.log("   7. User pays via Duitku → payment callback");
+  console.log("   8. Callback success → create subscription (1 bulan bayar + 1 bulan bonus)");
+  console.log("   9. User gets 2 bulan akses penuh");
   console.log("");
-  console.log("🚀 Ready for testing Category API!");
+  console.log("💳 Payment Gateway:");
+  console.log("   - Duitku integration ready");
+  console.log("   - Callback URL: https://radkasir.com/api/v1/payments/callback");
+  console.log("   - Return URL: https://radkasir.com/payment/success");
+  console.log("");
+  console.log("📧 Email Features:");
+  console.log("   - Email verification");
+  console.log("   - Password reset");
+  console.log("   - Store invitation codes");
+  console.log("   - Subscription reminders (7 & 3 hari sebelum expire)");
+  console.log("");
+  console.log("✅ Ready for mobile app testing!");
 }
 
 main()
