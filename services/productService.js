@@ -62,7 +62,7 @@ export const createProduct = async (productData, file, userId) => {
       id: storeId,
       OR: [
         { userId: userId },
-        { members: { some: { userId: userId } } }
+        { members: { some: { userId: userId, isActive: true } } }
       ]
     }
   });
@@ -81,7 +81,7 @@ export const createProduct = async (productData, file, userId) => {
 
   if (code) {
     const existingProduct = await prisma.product.findFirst({
-      where: { code, storeId, active: true }
+      where: { code, storeId, isActive: true } // Fixed: using isActive instead of active
     });
     if (existingProduct) {
       throw new Error("Product code already exists in this store");
@@ -127,19 +127,19 @@ export const createProduct = async (productData, file, userId) => {
       },
     });
 
-  await tx.productVariant.create({
-  data: {
-    productId: product.id,
-    unitId,
-    name: "Default",
-    quantity: parseInt(quantity) || 0,
-    capitalPrice: parseFloat(capitalPrice) || 0,
-    price: parseFloat(price) || 0,
-    discountPercent: parseFloat(discountPercent) || 0,
-    discountRp: parseFloat(discountRp) || 0,
-    image: imageUrl,
-  },
-});
+    await tx.productVariant.create({
+      data: {
+        productId: product.id,
+        unitId,
+        name: "Default",
+        quantity: parseInt(quantity) || 0,
+        capitalPrice: parseFloat(capitalPrice) || 0,
+        price: parseFloat(price) || 0,
+        discountPercent: parseFloat(discountPercent) || 0,
+        discountRp: parseFloat(discountRp) || 0,
+        image: imageUrl,
+      },
+    });
 
     return await tx.product.findUnique({
       where: { id: product.id },
@@ -175,7 +175,7 @@ export const getProductsByStore = async (storeId, userId, filters = {}) => {
       id: storeId,
       OR: [
         { userId: userId },
-        { members: { some: { userId: userId } } }
+        { members: { some: { userId: userId, isActive: true } } }
       ]
     }
   });
@@ -186,7 +186,7 @@ export const getProductsByStore = async (storeId, userId, filters = {}) => {
 
   const where = {
     storeId,
-    active: true,
+    isActive: true, // Fixed: using isActive instead of active
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -258,7 +258,7 @@ export const getProductById = async (productId, userId) => {
       id: product.storeId,
       OR: [
         { userId: userId },
-        { members: { some: { userId: userId } } }
+        { members: { some: { userId: userId, isActive: true } } }
       ]
     }
   });
@@ -285,7 +285,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     discountPercent,
     discountRp,
     quantity,
-    active,
+    isActive, // Fixed: using isActive instead of active
     isFavorite
   } = updateData;
 
@@ -333,7 +333,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
         code, 
         storeId: existingProduct.storeId,
         id: { not: productId },
-        active: true
+        isActive: true // Fixed: using isActive instead of active
       }
     });
     if (codeExists) {
@@ -396,7 +396,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
         ...(brand !== undefined && { brand }),
         ...(imageUrl !== existingProduct.image && { image: imageUrl }),
         ...(categoryId !== undefined && { categoryId }),
-        ...(active !== undefined && { active: active === 'true' || active === true }),
+        ...(isActive !== undefined && { isActive: isActive === 'true' || isActive === true }),
         ...(isFavorite !== undefined && { isFavorite: isFavorite === 'true' || isFavorite === true }),
       },
       include: {
@@ -470,7 +470,7 @@ export const deleteProduct = async (productId, userId) => {
 
   await prisma.product.update({
     where: { id: productId },
-    data: { active: false },
+    data: { isActive: false }, // Fixed: using isActive instead of active
   });
 
   return { 

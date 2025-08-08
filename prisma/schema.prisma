@@ -12,12 +12,14 @@ enum UserRole {
   USER
   MEMBER
 }
+
 enum SubscriptionStatus {
   ACTIVE
   EXPIRED
   CANCELLED
   TRIAL
 }
+
 enum InviteStatus {
   PENDING
   ACCEPTED
@@ -30,6 +32,7 @@ enum PaymentStatus {
   FAILED
   EXPIRED
 }
+
 model SubscriptionPackage {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -47,6 +50,7 @@ model SubscriptionPackage {
 
   @@map("subscription_packages")
 }
+
 model Payment {
   id               String        @id @default(cuid())
   userId           String
@@ -79,6 +83,7 @@ model Payment {
   @@index([reference])
   @@map("payments")
 }
+
 model Unit {
   id        String   @id @default(cuid())
   name      String   @unique
@@ -144,6 +149,7 @@ model OrderDebt {
   @@index([storeId])
   @@map("order_debts")
 }
+
 model OrderDetail {
   id           String   @id @default(cuid())
   orderId      String
@@ -203,35 +209,6 @@ model Order {
   @@index([customerId])
   @@index([orderNumber])
   @@map("orders")
-}
-
-model PostCategory {
-  id        String   @id @default(cuid())
-  slug      String
-  name      String
-  parentId  Int?
-  isActive  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("post_categories")
-}
-
-model Post {
-  id          String   @id @default(cuid())
-  title       String
-  slug        String
-  content     String
-  authorId    Int
-  thumbnail   String
-  isPublished Boolean
-  publishedAt DateTime
-  tags        Json?
-  meta        Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("posts")
 }
 
 model ProductVariant {
@@ -362,6 +339,7 @@ model InviteCode {
   @@index([code])
   @@map("invite_codes")
 }
+
 model Subscribe {
   id          String            @id @default(cuid())
   userId      String
@@ -379,6 +357,9 @@ model Subscribe {
   totalMonths    Int             @default(1)
   isUpgrade        Boolean       @default(false)
   previousPackageId String?
+
+  firstReminderSent  Boolean       @default(false)
+  secondReminderSent Boolean       @default(false)
   
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -400,7 +381,7 @@ model User {
   role            UserRole  @default(USER)
   phone           String?
   businessName    String?
-  businessType    String?
+  businessType    String? 
   businessAddress String?
   whatsapp        String?
   isActive        Boolean   @default(true)
