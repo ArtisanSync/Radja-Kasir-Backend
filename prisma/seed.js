@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Starting database seeding...");
 
-  // 1. Seed Subscription Packages (BARU)
+  // 1. Seed Subscription Packages
   console.log("💳 Seeding Subscription Packages...");
   const packages = await Promise.all([
     prisma.subscriptionPackage.upsert({
@@ -118,7 +118,7 @@ async function main() {
     }
   }
 
-  // 4. Seed Test User (NEW USER - belum punya toko dan subscription)
+  // 4. Seed Test User (NEW USER)
   console.log("👤 Seeding Test User...");
   const userPassword = await bcrypt.hash("@User123", 10);
 
@@ -234,48 +234,89 @@ async function main() {
     }
   }
 
-  // 8. Summary
+  // 8. Create sample member user
+  console.log("👥 Seeding Member User...");
+  const memberPassword = await bcrypt.hash("@Member123", 10);
+
+  let memberUser;
+  try {
+    memberUser = await prisma.user.create({
+      data: {
+        name: "Member Test",
+        email: "member@test.com",
+        password: memberPassword,
+        role: "MEMBER",
+        emailVerifiedAt: new Date(),
+      },
+    });
+    console.log(`✅ Member user created: ${memberUser.email}`);
+  } catch (error) {
+    if (error.code === "P2002") {
+      memberUser = await prisma.user.findUnique({
+        where: { email: "member@test.com" },
+      });
+      console.log(`⚠️  Member user already exists: ${memberUser.email}`);
+    } else {
+      throw error;
+    }
+  }
+
+  // 9. Create member relationship if admin store exists
+  if (adminStore && memberUser) {
+    console.log("🤝 Creating Member Relationship...");
+    const memberTempPassword = await bcrypt.hash("MEMBER123", 10);
+
+    try {
+      await prisma.storeMember.create({
+        data: {
+          storeId: adminStore.id,
+          userId: memberUser.id,
+          email: memberUser.email,
+          password: memberTempPassword,
+          role: "CASHIER",
+          isActive: true,
+        },
+      });
+      console.log(`✅ Member relationship created`);
+    } catch (error) {
+      console.log(`⚠️  Member relationship might already exist`);
+    }
+  }
+
+  // 10. Summary
   console.log("\n📊 Seeding Summary:");
   console.log("==================");
   console.log("💳 Subscription Packages:");
-  console.log("   1. Standard (1 user, 3 members, 1 store) - Rp 50.000");
-  console.log("   2. Pro (1 user, 5 members, 3 stores) - Rp 100.000");
-  console.log("   3. Business (1 user, 7 members, 5 stores) - Rp 200.000");
+  console.log("   1. Standard (1 user, 3 members, 1 store) - Rp 75.000");
+  console.log("   2. Pro (1 user, 5 members, 3 stores) - Rp 150.000");
+  console.log("   3. Business (1 user, 7 members, 5 stores) - Rp 250.000");
   console.log("");
   console.log("👑 Admin Account:");
   console.log(`   Email: admin@radjakasir.com`);
   console.log(`   Password: @Admin123`);
-  console.log(`   Has Store: Yes (Admin Store)`);
-  console.log(`   Subscription: Pro (1 year)`);
+  console.log(`   Login Response: { type: "ADMIN", ... }`);
   console.log("");
-  console.log("👤 Test User Account (NEW USER - untuk testing flow):");
+  console.log("👤 Test User Account (NEW USER):");
   console.log(`   Email: user@user.com`);
   console.log(`   Password: @User123`);
-  console.log(`   Has Store: NO - must create first store`);
-  console.log(`   Subscription: None yet - will get promo when completing payment`);
-  console.log(`   Business Profile: Sudah ada sesuai mobile UI`);
+  console.log(`   Login Response: { type: "USER", ... }`);
   console.log("");
-  console.log("🚀 NEW USER FLOW (sesuai requirement):");
-  console.log("   1. Register (name, email, password)");
-  console.log("   2. Verify email");
-  console.log("   3. Login → hasStore: false, isSubscribed: false");
-  console.log("   4. Frontend: redirect to create first store");
-  console.log("   5. POST /api/v1/stores/first → create store");
-  console.log("   6. POST /api/v1/payments/create → create payment");
-  console.log("   7. User pays via Duitku → payment callback");
-  console.log("   8. Callback success → create subscription (1 bulan bayar + 1 bulan bonus)");
-  console.log("   9. User gets 2 bulan akses penuh");
+  console.log("👥 Member Account:");
+  console.log(`   Email: member@test.com`);
+  console.log(`   Password: MEMBER123`);
+  console.log(`   Login Response: { type: "MEMBER", store: {...}, ... }`);
   console.log("");
-  console.log("💳 Payment Gateway:");
-  console.log("   - Duitku integration ready");
-  console.log("   - Callback URL: https://radkasir.com/api/v1/payments/callback");
-  console.log("   - Return URL: https://radkasir.com/payment/success");
+  console.log("🚀 UNIVERSAL LOGIN SYSTEM:");
+  console.log("   • Satu endpoint: POST /api/v1/auth/login");
+  console.log("   • Backend otomatis detect user type dari email/password");
+  console.log("   • Response type: USER | ADMIN | MEMBER");
+  console.log("   • Mobile app cukup satu form login");
   console.log("");
-  console.log("📧 Email Features:");
-  console.log("   - Email verification");
-  console.log("   - Password reset");
-  console.log("   - Store invitation codes");
-  console.log("   - Subscription reminders (7 & 3 hari sebelum expire)");
+  console.log("💡 MEMBER INVITATION FLOW:");
+  console.log("   1. Store owner creates invitation");
+  console.log("   2. System sends email with email + password");
+  console.log("   3. Member login with universal login endpoint");
+  console.log("   4. System detects as MEMBER and returns store info");
   console.log("");
   console.log("✅ Ready for mobile app testing!");
 }

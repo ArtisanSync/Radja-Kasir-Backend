@@ -1,9 +1,13 @@
 import prisma from "../config/prisma.js";
+import bcrypt from "bcrypt";
 import { generateRandomToken } from "../utils/jwt.js";
 import { sendInvitationEmail } from "../libs/nodemailer.js";
 import { canAddMember } from "./subscriptionService.js";
+import { BCRYPT_ROUNDS } from "../config/auth.js";
 
-export const generateInviteCode = async (storeId, invitedEmail, role, invitedBy) => {
+// Generate member invitation with email and password
+export const createMemberInvitation = async (storeId, invitedEmail, invitedName, role, invitedBy) => {
+  console.log(`👥 Creating member invitation for ${invitedEmail} to store ${storeId}`);
 
   const store = await prisma.store.findUnique({
     where: { id: storeId },
@@ -11,7 +15,7 @@ export const generateInviteCode = async (storeId, invitedEmail, role, invitedBy)
   });
 
   if (!store) {
-    throw new Error("Store not found");
+    throw new Error("Store tidak ditemukan");
   }
 
   const memberLimit = await canAddMember(storeId, store.userId);
@@ -22,115 +26,165 @@ export const generateInviteCode = async (storeId, invitedEmail, role, invitedBy)
   const existingMember = await prisma.storeMember.findFirst({
     where: {
       storeId,
-      user: { email: invitedEmail },
+      email: invitedEmail.toLowerCase().trim(),
       isActive: true,
     },
   });
 
   if (existingMember) {
-    throw new Error("User is already a member of this store");
+    throw new Error("Email sudah terdaftar sebagai member di toko ini");
   }
 
   const existingInvite = await prisma.inviteCode.findFirst({
     where: {
       storeId,
-      invitedEmail,
+      invitedEmail: invitedEmail.toLowerCase().trim(),
       status: "PENDING",
       expiresAt: { gte: new Date() },
     },
   });
 
   if (existingInvite) {
-    throw new Error("Invitation already sent to this email");
+    throw new Error("Undangan sudah dikirim ke email ini dan masih aktif");
   }
+  const tempPassword = generateRandomToken();
+  const hashedPassword = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
 
-  const code = generateRandomToken();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  const inviteCode = await prisma.inviteCode.create({
+  // Create invitation record
+  const invitation = await prisma.inviteCode.create({
     data: {
       storeId,
       invitedBy,
-      invitedEmail,
-      code,
+      invitedEmail: invitedEmail.toLowerCase().trim(),
+      invitedName: invitedName.trim(),
+      tempPassword: hashedPassword,
       role,
       expiresAt,
+      status: "PENDING",
+    },
+    include: {
+      store: {
+        select: {
+          name: true,
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
     },
   });
 
-  const inviterUser = await prisma.user.findUnique({
-    where: { id: invitedBy },
-    select: { name: true },
-  });
-
-  await sendInvitationEmail(
+  // Send invitation email with credentials
+  const emailSent = await sendInvitationEmail(
     invitedEmail,
-    code,
+    invitedName,
+    tempPassword,
     store.name,
-    inviterUser?.name || "Someone"
+    store.user.name,
+    role
   );
 
-  return inviteCode;
+  if (!emailSent) {
+    await prisma.inviteCode.delete({
+      where: { id: invitation.id },
+    });
+    throw new Error("Gagal mengirim email undangan. Silakan coba lagi.");
+  }
+
+  console.log(`Invitation sent to ${invitedEmail} for store ${store.name}`);
+
+  return {
+    ...invitation,
+    tempPassword: undefined,
+    credentials: {
+      email: invitedEmail,
+      message: "Email dan password telah dikirim ke alamat email yang diundang",
+    },
+  };
 };
 
-// Accept invite code
-export const acceptInviteCode = async (code, userId) => {
-  const inviteCode = await prisma.inviteCode.findFirst({
+// Accept invitation and create member account
+export const acceptMemberInvitation = async (email, password, invitedName) => {
+  console.log(`Processing member invitation acceptance for ${email}`);
+
+  const invitation = await prisma.inviteCode.findFirst({
     where: {
-      code,
+      invitedEmail: email.toLowerCase().trim(),
       status: "PENDING",
       expiresAt: { gte: new Date() },
     },
     include: {
-      store: true,
+      store: {
+        select: {
+          id: true,
+          name: true,
+          logo: true,
+          userId: true,
+        },
+      },
     },
   });
 
-  if (!inviteCode) {
-    throw new Error("Invalid or expired invitation code");
+  if (!invitation) {
+    throw new Error("Undangan tidak valid atau sudah kedaluwarsa");
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  const isPasswordValid = await bcrypt.compare(password, invitation.tempPassword);
+  if (!isPasswordValid) {
+    throw new Error("Password yang dimasukkan salah");
+  }
+  let user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase().trim() },
   });
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  if (user.email !== inviteCode.invitedEmail) {
-    throw new Error("This invitation is not for your email address");
-  }
-
-  const existingMember = await prisma.storeMember.findFirst({
-    where: {
-      storeId: inviteCode.storeId,
-      userId,
-      isActive: true,
-    },
-  });
-
-  if (existingMember) {
-    throw new Error("You are already a member of this store");
-  }
 
   const result = await prisma.$transaction(async (tx) => {
-    // Update invite code status
-    await tx.inviteCode.update({
-      where: { id: inviteCode.id },
-      data: {
-        status: "ACCEPTED",
-        acceptedAt: new Date(),
-        acceptedBy: userId,
+    if (!user) {
+      console.log(`Creating new user account for ${email}`);
+      const newPassword = generateRandomToken();
+      const hashedUserPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+      user = await tx.user.create({
+        data: {
+          name: invitedName || invitation.invitedName,
+          email: email.toLowerCase().trim(),
+          password: hashedUserPassword,
+          role: "MEMBER",
+          emailVerifiedAt: new Date(),
+          isActive: true,
+        },
+      });
+
+      console.log(`New user created: ${user.id}`);
+    } else if (user.role === "USER") {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { role: "MEMBER" },
+      });
+    }
+    const existingMembership = await tx.storeMember.findFirst({
+      where: {
+        storeId: invitation.storeId,
+        userId: user.id,
+        isActive: true,
       },
     });
 
-    // Add user as store member
+    if (existingMembership) {
+      throw new Error("Anda sudah menjadi member di toko ini");
+    }
+
+    // Create store membership
     const storeMember = await tx.storeMember.create({
       data: {
-        storeId: inviteCode.storeId,
-        userId,
-        role: inviteCode.role,
+        storeId: invitation.storeId,
+        userId: user.id,
+        email: email.toLowerCase().trim(),
+        password: invitation.tempPassword,
+        role: invitation.role,
+        isActive: true,
       },
       include: {
         store: {
@@ -151,64 +205,163 @@ export const acceptInviteCode = async (code, userId) => {
       },
     });
 
+    // Mark invitation as accepted
+    await tx.inviteCode.update({
+      where: { id: invitation.id },
+      data: {
+        status: "ACCEPTED",
+        acceptedAt: new Date(),
+        acceptedBy: user.id,
+      },
+    });
+
     return storeMember;
   });
 
-  return result;
+  console.log(`Member invitation accepted successfully for ${email}`);
+
+  return {
+    member: result,
+    message: "Berhasil bergabung sebagai member toko",
+    store: result.store,
+    credentials: {
+      email: email,
+      message: "Sekarang Anda dapat login menggunakan email dan password yang dikirim",
+    },
+  };
 };
 
-// Get store invites
-export const getStoreInvites = async (storeId, userId) => {
-  // Verify user has access to store
+// Get store invitations
+export const getStoreInvitations = async (storeId, userId) => {
   const store = await prisma.store.findFirst({
     where: {
       id: storeId,
-      OR: [
-        { userId },
-        { members: { some: { userId, isActive: true } } }
-      ],
+      userId: userId,
     },
   });
 
   if (!store) {
-    throw new Error("Store not found or access denied");
+    throw new Error("Store tidak ditemukan atau Anda bukan pemilik toko");
   }
 
-  const invites = await prisma.inviteCode.findMany({
+  const invitations = await prisma.inviteCode.findMany({
     where: { storeId },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      invitedEmail: true,
+      invitedName: true,
+      role: true,
+      status: true,
+      expiresAt: true,
+      acceptedAt: true,
+      createdAt: true,
+    },
   });
 
-  return invites;
+  return invitations;
 };
 
-// Revoke invite
-export const revokeInvite = async (inviteId, userId) => {
-  const inviteCode = await prisma.inviteCode.findUnique({
+// Revoke invitation
+export const revokeInvitation = async (inviteId, userId) => {
+  const invitation = await prisma.inviteCode.findUnique({
     where: { id: inviteId },
     include: {
       store: true,
     },
   });
 
-  if (!inviteCode) {
-    throw new Error("Invite not found");
+  if (!invitation) {
+    throw new Error("Undangan tidak ditemukan");
   }
 
-  if (inviteCode.invitedBy !== userId && inviteCode.store.userId !== userId) {
-    throw new Error("Permission denied");
+  if (invitation.store.userId !== userId) {
+    throw new Error("Hanya pemilik toko yang dapat membatalkan undangan");
   }
 
-  if (inviteCode.status !== "PENDING") {
-    throw new Error("Cannot revoke non-pending invitation");
+  if (invitation.status !== "PENDING") {
+    throw new Error("Hanya undangan yang pending yang dapat dibatalkan");
   }
 
   await prisma.inviteCode.update({
     where: { id: inviteId },
     data: {
-      status: "EXPIRED",
+      status: "REVOKED",
+      updatedAt: new Date(),
     },
   });
 
-  return { message: "Invitation revoked successfully" };
+  return { message: "Undangan berhasil dibatalkan" };
+};
+
+// Get store members
+export const getStoreMembers = async (storeId, userId) => {
+  const store = await prisma.store.findFirst({
+    where: {
+      id: storeId,
+      OR: [
+        { userId: userId },
+        { members: { some: { userId: userId, isActive: true } } },
+      ],
+    },
+  });
+
+  if (!store) {
+    throw new Error("Store tidak ditemukan atau akses ditolak");
+  }
+
+  const members = await prisma.storeMember.findMany({
+    where: {
+      storeId,
+      isActive: true,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          avatar: true,
+        },
+      },
+    },
+    orderBy: { joinedAt: "desc" },
+  });
+
+  return members.map(member => ({
+    ...member,
+    password: undefined,
+  }));
+};
+
+// Remove member
+export const removeMember = async (memberId, storeId, userId) => {
+  const member = await prisma.storeMember.findUnique({
+    where: { id: memberId },
+    include: {
+      store: true,
+    },
+  });
+
+  if (!member) {
+    throw new Error("Member tidak ditemukan");
+  }
+
+  if (member.store.userId !== userId) {
+    throw new Error("Hanya pemilik toko yang dapat menghapus member");
+  }
+
+  if (member.storeId !== storeId) {
+    throw new Error("Member tidak berada di toko ini");
+  }
+
+  await prisma.storeMember.update({
+    where: { id: memberId },
+    data: {
+      isActive: false,
+      updatedAt: new Date(),
+    },
+  });
+
+  return { message: "Member berhasil dihapus dari toko" };
 };
