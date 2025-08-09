@@ -3,12 +3,9 @@ import { sendSubscriptionReminderEmail } from "../libs/nodemailer.js";
 
 // Send reminder 7 days before subscription expires
 export const sendFirstReminder = async () => {
-  console.log("🔔 Checking for subscriptions expiring in 7 days...");
-  
   const sevenDaysFromNow = new Date();
   sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
   
-  // Reset time to start of day for comparison
   sevenDaysFromNow.setHours(0, 0, 0, 0);
   const endOfDay = new Date(sevenDaysFromNow);
   endOfDay.setHours(23, 59, 59, 999);
@@ -40,7 +37,7 @@ export const sendFirstReminder = async () => {
     },
   });
 
-  console.log(`📧 Found ${expiringSubscriptions.length} subscriptions for first reminder`);
+  console.log(`First reminder: processing ${expiringSubscriptions.length} subscriptions`);
 
   for (const subscription of expiringSubscriptions) {
     try {
@@ -57,10 +54,8 @@ export const sendFirstReminder = async () => {
         where: { id: subscription.id },
         data: { firstReminderSent: true },
       });
-
-      console.log(`✅ First reminder sent to ${subscription.user.email}`);
     } catch (error) {
-      console.error(`❌ Failed to send first reminder to ${subscription.user.email}:`, error);
+      console.error(`Failed to send first reminder to ${subscription.user.email}:`, error);
     }
   }
 
@@ -72,12 +67,9 @@ export const sendFirstReminder = async () => {
 
 // Send reminder 3 days before subscription expires
 export const sendSecondReminder = async () => {
-  console.log("🔔 Checking for subscriptions expiring in 3 days...");
-  
   const threeDaysFromNow = new Date();
   threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
   
-  // Reset time to start of day for comparison
   threeDaysFromNow.setHours(0, 0, 0, 0);
   const endOfDay = new Date(threeDaysFromNow);
   endOfDay.setHours(23, 59, 59, 999);
@@ -89,7 +81,6 @@ export const sendSecondReminder = async () => {
         gte: threeDaysFromNow,
         lte: endOfDay,
       },
-      // Only send second reminder once
       secondReminderSent: { not: true }
     },
     include: {
@@ -109,7 +100,7 @@ export const sendSecondReminder = async () => {
     },
   });
 
-  console.log(`📧 Found ${expiringSubscriptions.length} subscriptions for second reminder`);
+  console.log(`Second reminder: processing ${expiringSubscriptions.length} subscriptions`);
 
   for (const subscription of expiringSubscriptions) {
     try {
@@ -126,10 +117,8 @@ export const sendSecondReminder = async () => {
         where: { id: subscription.id },
         data: { secondReminderSent: true },
       });
-
-      console.log(`✅ Second reminder sent to ${subscription.user.email}`);
     } catch (error) {
-      console.error(`❌ Failed to send second reminder to ${subscription.user.email}:`, error);
+      console.error(`Failed to send second reminder to ${subscription.user.email}:`, error);
     }
   }
 
@@ -141,8 +130,6 @@ export const sendSecondReminder = async () => {
 
 // Auto-expire subscriptions
 export const expireSubscriptions = async () => {
-  console.log("⏰ Checking for expired subscriptions...");
-  
   const now = new Date();
 
   const expiredSubscriptions = await prisma.subscribe.updateMany({
@@ -156,7 +143,7 @@ export const expireSubscriptions = async () => {
     },
   });
 
-  console.log(`⚠️ Expired ${expiredSubscriptions.count} subscriptions`);
+  console.log(`Expired ${expiredSubscriptions.count} subscriptions`);
 
   return {
     expired: expiredSubscriptions.count,
@@ -166,8 +153,6 @@ export const expireSubscriptions = async () => {
 
 // Run all reminder checks (untuk cron job)
 export const runReminderChecks = async () => {
-  console.log("🚀 Starting subscription reminder checks...");
-  
   const results = {
     firstReminders: await sendFirstReminder(),
     secondReminders: await sendSecondReminder(),
@@ -175,6 +160,6 @@ export const runReminderChecks = async () => {
     timestamp: new Date().toISOString(),
   };
 
-  console.log("✅ Reminder checks completed:", results);
+  console.log("Reminder checks completed:", results);
   return results;
 };

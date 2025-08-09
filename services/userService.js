@@ -211,7 +211,6 @@ export const updateUser = async (userId, updateData, file) => {
 
       avatarUrl = newAvatarUrl;
     } catch (error) {
-      console.error("Avatar upload failed:", error);
       throw new Error("Failed to upload avatar");
     }
   }
@@ -475,6 +474,7 @@ export const deleteUser = async (userId, currentUser) => {
     try {
       await deleteFileFromStorage(targetUser.avatar);
     } catch (error) {
+
     }
   }
 

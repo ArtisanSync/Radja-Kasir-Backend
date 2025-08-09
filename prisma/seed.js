@@ -149,7 +149,38 @@ async function main() {
     }
   }
 
-  // 5. Create Admin Subscription (Pro - 1 year)
+  // 5. Seed Test User dengan Subscription Aktif
+  console.log("👤 Seeding Active User...");
+  const activeUserPassword = await bcrypt.hash("@Active123", 10);
+
+  let activeUser;
+  try {
+    activeUser = await prisma.user.create({
+      data: {
+        name: "Active User",
+        email: "active@user.com",
+        password: activeUserPassword,
+        role: "USER",
+        businessName: "Toko Sukses Jaya",
+        businessType: "Retail",
+        businessAddress: "Jl. Sukses No. 123, Jakarta",
+        whatsapp: "081234567890",
+        emailVerifiedAt: new Date(),
+      },
+    });
+    console.log(`✅ Active user created: ${activeUser.email}`);
+  } catch (error) {
+    if (error.code === "P2002") {
+      activeUser = await prisma.user.findUnique({
+        where: { email: "active@user.com" },
+      });
+      console.log(`⚠️  Active user already exists: ${activeUser.email}`);
+    } else {
+      throw error;
+    }
+  }
+
+  // 6. Create Admin Subscription (Pro - 1 year)
   console.log("💎 Creating Admin Subscription...");
   const proPackage = packages.find(p => p.name === "PRO");
 
@@ -174,7 +205,32 @@ async function main() {
     console.log("⚠️  Admin subscription already exists");
   }
 
-  // 6. Seed Admin Store
+  // 7. Create Active User Subscription (Standard - 2 months dengan new user promo)
+  console.log("💎 Creating Active User Subscription...");
+  const standardPackage = packages.find(p => p.name === "STANDARD");
+
+  try {
+    await prisma.subscribe.create({
+      data: {
+        userId: activeUser.id,
+        packageId: standardPackage.id,
+        status: "ACTIVE",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days (new user promo)
+        isTrial: false,
+        isNewUserPromo: true,
+        paidMonths: 1,
+        bonusMonths: 1,
+        totalMonths: 2,
+        autoRenew: true,
+      },
+    });
+    console.log("✅ Active user subscription created");
+  } catch (error) {
+    console.log("⚠️  Active user subscription already exists");
+  }
+
+  // 8. Seed Admin Store
   console.log("🏪 Seeding Admin Store...");
   let adminStore;
   try {
@@ -191,7 +247,6 @@ async function main() {
       },
     });
 
-    // Create store settings for admin store
     await prisma.storeSetting.create({
       data: {
         storeId: adminStore.id,
@@ -206,35 +261,38 @@ async function main() {
     console.log(`⚠️  Admin store might already exist`);
   }
 
-  // 7. Seed Sample Categories (for admin store)
-  if (adminStore) {
-    console.log("📁 Seeding Sample Categories...");
+  // 9. Seed Active User Store
+  console.log("🏪 Seeding Active User Store...");
+  let activeStore;
+  try {
+    activeStore = await prisma.store.create({
+      data: {
+        name: "Toko Sukses Jaya",
+        storeType: "Retail",
+        description: "Toko retail dengan subscription aktif",
+        address: "Jl. Sukses No. 123, Jakarta",
+        phone: "+628123456789",
+        whatsapp: "+628123456789",
+        email: "toko@suksesjaya.com",
+        userId: activeUser.id,
+      },
+    });
 
-    const categories = [
-      { name: "Makanan", storeId: adminStore.id },
-      { name: "Minuman", storeId: adminStore.id },
-      { name: "Snack", storeId: adminStore.id },
-      { name: "Elektronik", storeId: adminStore.id },
-      { name: "Pakaian", storeId: adminStore.id },
-    ];
+    await prisma.storeSetting.create({
+      data: {
+        storeId: activeStore.id,
+        tax: 10,
+        currency: "IDR",
+        timezone: "Asia/Jakarta",
+      },
+    });
 
-    for (const category of categories) {
-      try {
-        const newCategory = await prisma.category.create({
-          data: category,
-        });
-        console.log(`✅ Category created: ${newCategory.name}`);
-      } catch (error) {
-        if (error.code === "P2002") {
-          console.log(`⚠️  Category already exists: ${category.name}`);
-        } else {
-          throw error;
-        }
-      }
-    }
+    console.log(`✅ Active user store created: ${activeStore.name}`);
+  } catch (error) {
+    console.log(`⚠️  Active user store might already exist`);
   }
 
-  // 8. Create sample member user
+  // 10. Create sample member user
   console.log("👥 Seeding Member User...");
   const memberPassword = await bcrypt.hash("@Member123", 10);
 
@@ -261,9 +319,9 @@ async function main() {
     }
   }
 
-  // 9. Create member relationship if admin store exists
+  // 11. Create member relationships
   if (adminStore && memberUser) {
-    console.log("🤝 Creating Member Relationship...");
+    console.log("🤝 Creating Member Relationships...");
     const memberTempPassword = await bcrypt.hash("MEMBER123", 10);
 
     try {
@@ -277,13 +335,55 @@ async function main() {
           isActive: true,
         },
       });
-      console.log(`✅ Member relationship created`);
+      console.log(`✅ Member relationship created for admin store`);
     } catch (error) {
       console.log(`⚠️  Member relationship might already exist`);
     }
   }
 
-  // 10. Summary
+  if (activeStore && memberUser) {
+    try {
+      const memberTempPassword2 = await bcrypt.hash("MEMBER456", 10);
+      await prisma.storeMember.create({
+        data: {
+          storeId: activeStore.id,
+          userId: memberUser.id,
+          email: "member2@test.com",
+          password: memberTempPassword2,
+          role: "MANAGER",
+          isActive: true,
+        },
+      });
+      console.log(`✅ Member relationship created for active store`);
+    } catch (error) {
+      console.log(`⚠️  Member relationship might already exist`);
+    }
+  }
+
+  // 12. Create sample payment records
+  console.log("💳 Creating Sample Payments...");
+  try {
+    await prisma.payment.create({
+      data: {
+        userId: activeUser.id,
+        subscriptionId: (await prisma.subscribe.findFirst({ where: { userId: activeUser.id } }))?.id,
+        merchantCode: "DS24351",
+        reference: "REF_SAMPLE_001",
+        merchantOrderId: "ORDER_SAMPLE_001",
+        paymentAmount: standardPackage.price,
+        productDetail: `Subscription ${standardPackage.displayName}`,
+        status: "SUCCESS",
+        statusMessage: "Payment successful",
+        paidAt: new Date(),
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    });
+    console.log("✅ Sample payment created");
+  } catch (error) {
+    console.log("⚠️  Sample payment might already exist");
+  }
+
+  // 13. Summary
   console.log("\n📊 Seeding Summary:");
   console.log("==================");
   console.log("💳 Subscription Packages:");
@@ -295,30 +395,43 @@ async function main() {
   console.log(`   Email: admin@radjakasir.com`);
   console.log(`   Password: @Admin123`);
   console.log(`   Login Response: { type: "ADMIN", ... }`);
+  console.log(`   Subscription: Pro (1 year) - ACTIVE`);
   console.log("");
-  console.log("👤 Test User Account (NEW USER):");
+  console.log("👤 Test User Account (NEW USER - No Subscription):");
   console.log(`   Email: user@user.com`);
   console.log(`   Password: @User123`);
   console.log(`   Login Response: { type: "USER", ... }`);
+  console.log(`   Status: Perlu subscribe untuk akses fitur`);
+  console.log("");
+  console.log("👤 Active User Account (HAS ACTIVE SUBSCRIPTION):");
+  console.log(`   Email: active@user.com`);
+  console.log(`   Password: @Active123`);
+  console.log(`   Login Response: { type: "USER", ... }`);
+  console.log(`   Subscription: Standard (2 bulan) - NEW USER PROMO`);
+  console.log(`   Store: "Toko Sukses Jaya" - ACTIVE`);
   console.log("");
   console.log("👥 Member Account:");
   console.log(`   Email: member@test.com`);
   console.log(`   Password: MEMBER123`);
   console.log(`   Login Response: { type: "MEMBER", store: {...}, ... }`);
   console.log("");
-  console.log("🚀 UNIVERSAL LOGIN SYSTEM:");
-  console.log("   • Satu endpoint: POST /api/v1/auth/login");
-  console.log("   • Backend otomatis detect user type dari email/password");
-  console.log("   • Response type: USER | ADMIN | MEMBER");
-  console.log("   • Mobile app cukup satu form login");
+  console.log("🚀 SISTEM YANG READY:");
+  console.log("✅ Universal login system");
+  console.log("✅ New user promo (1 bulan bayar = 2 bulan akses)");
+  console.log("✅ Email/password member invitation");
+  console.log("✅ Subscription limits validation");
+  console.log("✅ Admin panel untuk monitoring");
+  console.log("✅ Payment integration dengan Duitku");
   console.log("");
-  console.log("💡 MEMBER INVITATION FLOW:");
-  console.log("   1. Store owner creates invitation");
-  console.log("   2. System sends email with email + password");
-  console.log("   3. Member login with universal login endpoint");
-  console.log("   4. System detects as MEMBER and returns store info");
+  console.log("🎯 ADMIN FEATURES:");
+  console.log("✅ View all active subscribers");
+  console.log("✅ Change user subscription packages");
+  console.log("✅ Extend subscription duration");
+  console.log("✅ Delete user accounts");
+  console.log("✅ Delete store members");
+  console.log("✅ Dashboard statistics");
   console.log("");
-  console.log("✅ Ready for mobile app testing!");
+  console.log("🎉 Ready for production deployment!");
 }
 
 main()
