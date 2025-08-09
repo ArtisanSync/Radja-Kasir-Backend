@@ -27,6 +27,7 @@ export const createFirstStore = async (storeData, user, packageId = null) => {
   if (!packageId) {
     throw new Error("No subscription package available");
   }
+
   const existingStore = await prisma.store.findFirst({
     where: {
       name: name.trim(),
@@ -350,10 +351,13 @@ export const updateStore = async (storeId, updateData, user) => {
         name || existingStore.name
       );
       if (existingStore.logo) {
-        await deleteFileFromStorage(existingStore.logo);
+        try {
+          await deleteFileFromStorage(existingStore.logo);
+        } catch (deleteError) {
+          // Silent fail for file deletion
+        }
       }
     } catch (error) {
-      console.error("Logo upload failed:", error);
       throw new Error("Failed to upload store logo");
     }
   }
@@ -367,10 +371,13 @@ export const updateStore = async (storeId, updateData, user) => {
         name || existingStore.name
       );
       if (existingStore.stamp) {
-        await deleteFileFromStorage(existingStore.stamp);
+        try {
+          await deleteFileFromStorage(existingStore.stamp);
+        } catch (deleteError) {
+          // Silent fail for file deletion
+        }
       }
     } catch (error) {
-      console.error("Stamp upload failed:", error);
       throw new Error("Failed to upload store stamp");
     }
   }

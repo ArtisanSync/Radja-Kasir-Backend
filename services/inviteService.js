@@ -7,8 +7,6 @@ import { BCRYPT_ROUNDS } from "../config/auth.js";
 
 // Generate member invitation with email and password
 export const createMemberInvitation = async (storeId, invitedEmail, invitedName, role, invitedBy) => {
-  console.log(`👥 Creating member invitation for ${invitedEmail} to store ${storeId}`);
-
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     include: { user: true },
@@ -47,9 +45,9 @@ export const createMemberInvitation = async (storeId, invitedEmail, invitedName,
   if (existingInvite) {
     throw new Error("Undangan sudah dikirim ke email ini dan masih aktif");
   }
+
   const tempPassword = generateRandomToken();
   const hashedPassword = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
-
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
   // Create invitation record
@@ -95,8 +93,6 @@ export const createMemberInvitation = async (storeId, invitedEmail, invitedName,
     throw new Error("Gagal mengirim email undangan. Silakan coba lagi.");
   }
 
-  console.log(`Invitation sent to ${invitedEmail} for store ${store.name}`);
-
   return {
     ...invitation,
     tempPassword: undefined,
@@ -109,8 +105,6 @@ export const createMemberInvitation = async (storeId, invitedEmail, invitedName,
 
 // Accept invitation and create member account
 export const acceptMemberInvitation = async (email, password, invitedName) => {
-  console.log(`Processing member invitation acceptance for ${email}`);
-
   const invitation = await prisma.inviteCode.findFirst({
     where: {
       invitedEmail: email.toLowerCase().trim(),
@@ -132,17 +126,18 @@ export const acceptMemberInvitation = async (email, password, invitedName) => {
   if (!invitation) {
     throw new Error("Undangan tidak valid atau sudah kedaluwarsa");
   }
+
   const isPasswordValid = await bcrypt.compare(password, invitation.tempPassword);
   if (!isPasswordValid) {
     throw new Error("Password yang dimasukkan salah");
   }
+
   let user = await prisma.user.findUnique({
     where: { email: email.toLowerCase().trim() },
   });
 
   const result = await prisma.$transaction(async (tx) => {
     if (!user) {
-      console.log(`Creating new user account for ${email}`);
       const newPassword = generateRandomToken();
       const hashedUserPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
@@ -156,14 +151,13 @@ export const acceptMemberInvitation = async (email, password, invitedName) => {
           isActive: true,
         },
       });
-
-      console.log(`New user created: ${user.id}`);
     } else if (user.role === "USER") {
       await tx.user.update({
         where: { id: user.id },
         data: { role: "MEMBER" },
       });
     }
+
     const existingMembership = await tx.storeMember.findFirst({
       where: {
         storeId: invitation.storeId,
@@ -217,8 +211,6 @@ export const acceptMemberInvitation = async (email, password, invitedName) => {
 
     return storeMember;
   });
-
-  console.log(`Member invitation accepted successfully for ${email}`);
 
   return {
     member: result,

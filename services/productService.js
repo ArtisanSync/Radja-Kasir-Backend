@@ -470,7 +470,7 @@ export const deleteProduct = async (productId, userId) => {
 
   await prisma.product.update({
     where: { id: productId },
-    data: { isActive: false }, // Fixed: using isActive instead of active
+    data: { isActive: false },
   });
 
   return { 
