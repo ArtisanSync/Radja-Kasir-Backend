@@ -4,6 +4,7 @@ import {
   handlePaymentCallback,
   getPaymentStatus,
   getUserPaymentHistory,
+  cancelExpiredPayments,
 } from "../services/paymentService.js";
 
 // Create payment for subscription
@@ -167,4 +168,24 @@ export const getPaymentHistory = async (req, res) => {
     return errorResponse(res, error.message, 400);
   }
 };
-  
+
+// Cancel expired payments (admin or scheduled task)
+export const cleanupExpiredPayments = async (req, res) => {
+  try {
+    console.log("🧹 Cleanup expired payments requested");
+    
+    const result = await cancelExpiredPayments();
+    
+    return successResponse(
+      res, 
+      {
+        cancelledCount: result.count,
+        message: `${result.count} expired payments have been cancelled`
+      },
+      "Expired payments cleanup completed"
+    );
+  } catch (error) {
+    console.error("❌ Cleanup error:", error.message);
+    return errorResponse(res, error.message, 500);
+  }
+};

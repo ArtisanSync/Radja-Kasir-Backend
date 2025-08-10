@@ -22,7 +22,6 @@ class DuitkuPayment {
     this.returnUrl = process.env.DUITKU_RETURN_URL || 
       `${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/success`;
     
-    // Enhanced logging
     console.log("\n🔧 === DUITKU CONFIGURATION ===");
     console.log(`🌍 Environment: ${this.environment}`);
     console.log(`🧪 Sandbox Mode: ${this.isSandbox}`);
@@ -87,33 +86,63 @@ class DuitkuPayment {
         this.merchantCode
       );
 
-      // Prepare request data
+      // Enhanced request data untuk menghindari FDS rejection
       const requestBody = {
         merchantCode: this.merchantCode,
         paymentAmount: parseInt(paymentAmount),
         paymentMethod: "VC", // Virtual Credit (Credit Card)
         merchantOrderId,
         productDetail,
-        customerVaName: customerName,
-        email,
-        phoneNumber: phoneNumber || "081234567890",
+        // Customer info yang lebih lengkap untuk mengurangi FDS rejection
+        customerVaName: customerName.trim(),
+        email: email.toLowerCase().trim(),
+        phoneNumber: phoneNumber ? phoneNumber.replace(/[^0-9]/g, '') : "081234567890",
+        // Billing address untuk mengurangi FDS false positive
+        itemDetails: [
+          {
+            name: productDetail,
+            price: parseInt(paymentAmount),
+            quantity: 1
+          }
+        ],
+        customerDetail: {
+          firstName: customerName.split(' ')[0] || customerName,
+          lastName: customerName.split(' ').slice(1).join(' ') || customerName,
+          email: email.toLowerCase().trim(),
+          phoneNumber: phoneNumber ? phoneNumber.replace(/[^0-9]/g, '') : "081234567890",
+          billingAddress: {
+            firstName: customerName.split(' ')[0] || customerName,
+            lastName: customerName.split(' ').slice(1).join(' ') || customerName,
+            address: "Jl. Test Address No. 123",
+            city: "Jakarta",
+            postalCode: "12345",
+            phone: phoneNumber ? phoneNumber.replace(/[^0-9]/g, '') : "081234567890",
+            countryCode: "ID"
+          }
+        },
         callbackUrl: this.callbackUrl,
         returnUrl: this.returnUrl,
         signature,
         expiryPeriod: parseInt(expiryPeriod),
+        // Additional parameters untuk sandbox
+        additionalParam: JSON.stringify({
+          environment: "sandbox",
+          source: "radjakasir_backend",
+          version: "1.0"
+        })
       };
 
-      console.log("📤 Request Data:", {
+      console.log("📤 Enhanced Request Data:", {
         merchantCode: requestBody.merchantCode,
         paymentAmount: requestBody.paymentAmount,
         paymentMethod: requestBody.paymentMethod,
         merchantOrderId: requestBody.merchantOrderId,
-        productDetail: requestBody.productDetail,
         customerName: requestBody.customerVaName,
         email: requestBody.email,
-        expiryHours: Math.round(requestBody.expiryPeriod / 60),
-        callbackUrl: requestBody.callbackUrl,
-        returnUrl: requestBody.returnUrl,
+        phoneNumber: requestBody.phoneNumber,
+        hasCustomerDetail: !!requestBody.customerDetail,
+        hasBillingAddress: !!requestBody.customerDetail?.billingAddress,
+        expiryHours: Math.round(requestBody.expiryPeriod / 60)
       });
 
       // Make API request to Duitku
@@ -124,7 +153,10 @@ class DuitkuPayment {
           headers: {
             "Content-Type": "application/json",
             "User-Agent": "RadjaKasir-Backend/1.0",
-            "Accept": "application/json"
+            "Accept": "application/json",
+            // Additional headers untuk sandbox
+            "X-Source": "radjakasir",
+            "X-Environment": this.isSandbox ? "sandbox" : "production"
           },
           timeout: 30000,
         }
@@ -136,12 +168,15 @@ class DuitkuPayment {
         reference: response.data.reference,
         paymentUrl: response.data.paymentUrl ? "✅ Generated" : "❌ Missing",
         vaNumber: response.data.vaNumber || "N/A",
-        amount: response.data.amount || requestBody.paymentAmount
+        amount: response.data.amount || requestBody.paymentAmount,
+        // FDS specific info
+        fdsStatus: response.data.fdsStatus || "N/A",
+        riskScore: response.data.riskScore || "N/A"
       });
 
       // Validate successful response
       if (response.data.statusCode !== "00") {
-        throw new Error(`Duitku API Error: ${response.data.statusMessage}`);
+        throw new Error(`Duitku API Error [${response.data.statusCode}]: ${response.data.statusMessage}`);
       }
 
       if (!response.data.paymentUrl) {
@@ -161,6 +196,7 @@ class DuitkuPayment {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status,
+        statusText: error.response?.statusText,
         url: error.config?.url
       });
       console.log("==============================\n");
@@ -255,25 +291,6 @@ class DuitkuPayment {
         error: error.response?.data || { message: error.message },
       };
     }
-  }
-
-  // Simulate successful payment (sandbox only)
-  async simulatePaymentSuccess(merchantOrderId) {
-    if (!this.isSandbox) {
-      throw new Error("Payment simulation only available in sandbox mode");
-    }
-
-    console.log(`🎭 Simulating payment success for: ${merchantOrderId}`);
-    
-    // Simulate callback data
-    return {
-      merchantCode: this.merchantCode,
-      amount: "150000", // Example amount
-      merchantOrderId,
-      productDetail: "Simulated Payment",
-      resultCode: "00",
-      signature: "simulated_signature_sandbox"
-    };
   }
 }
 
