@@ -1,252 +1,77 @@
 import prisma from "../config/prisma.js";
-import { createNewUserSubscription } from "./subscriptionService.js";
-import {
-  uploadStoreLogoToStorage,
-  uploadStoreStampToStorage,
-  deleteFileFromStorage,
-} from "../config/storage.js";
+import { canCreateStore } from "./subscriptionService.js";
 
-export const createFirstStore = async (storeData, user, packageId = null) => {
-  const { name, storeType, description, address, phone, whatsapp, email, logo, stamp } = storeData;
+// Create first store dengan pengecekan subscription
+export const createFirstStore = async (storeData) => {
+  const { userId } = storeData;
 
-  const existingStoreCount = await prisma.store.count({
-    where: { userId: user.id, isActive: true },
+  const existingStores = await prisma.store.count({
+    where: { userId, isActive: true },
   });
 
-  if (existingStoreCount > 0) {
-    throw new Error("You already have a store. Use regular create store endpoint.");
+  if (existingStores > 0) {
+    throw new Error("You already have stores. Use the regular create store endpoint.");
+  }
+  const canCreate = await canCreateStore(userId);
+  if (!canCreate.canCreate) {
+    throw new Error(canCreate.reason);
   }
 
-  if (!packageId) {
-    const standardPackage = await prisma.subscriptionPackage.findFirst({
-      where: { name: "STANDARD" },
-    });
-    packageId = standardPackage?.id;
-  }
-
-  if (!packageId) {
-    throw new Error("No subscription package available");
-  }
-
-  const existingStore = await prisma.store.findFirst({
-    where: {
-      name: name.trim(),
-      userId: user.id,
-    },
-  });
-
-  if (existingStore) {
-    throw new Error("Store with this name already exists");
-  }
-
-  let logoUrl = null;
-  let stampUrl = null;
-
-  const result = await prisma.$transaction(async (tx) => {
-    // Create store
-    const store = await tx.store.create({
-      data: {
-        name: name.trim(),
-        storeType: storeType?.trim() || null,
-        description: description?.trim() || null,
-        address: address?.trim() || null,
-        phone: phone?.trim() || null,
-        whatsapp: whatsapp?.trim() || null,
-        email: email?.trim() || null,
-        userId: user.id,
-      },
-    });
-
-    if (logo) {
-      try {
-        logoUrl = await uploadStoreLogoToStorage(logo, store.id, store.id, store.name);
-      } catch (error) {
-        throw new Error("Failed to upload store logo");
-      }
-    }
-
-    if (stamp) {
-      try {
-        stampUrl = await uploadStoreStampToStorage(stamp, store.id, store.id, store.name);
-      } catch (error) {
-        throw new Error("Failed to upload store stamp");
-      }
-    }
-
-    // Update store with images
-    const updatedStore = await tx.store.update({
-      where: { id: store.id },
-      data: { 
-        logo: logoUrl, 
-        stamp: stampUrl 
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
-    });
-
-    // Create store settings
-    await tx.storeSetting.create({
-      data: {
-        storeId: store.id,
-        tax: 0,
-        currency: "IDR",
-        timezone: "Asia/Jakarta",
-      },
-    });
-
-    return updatedStore;
-  });
-
-  return {
-    store: result,
-    requiresPayment: true,
-    packageId: packageId,
-    message: "Store created successfully. Please complete payment to activate subscription."
-  };
-};
-
-// Create additional store - dengan validation subscription
-export const createStore = async (storeData, user) => {
-  const { name, storeType, description, address, phone, whatsapp, email, logo, stamp } = storeData;
-  const existingStoreCount = await prisma.store.count({
-    where: { userId: user.id, isActive: true },
-  });
-
-  if (existingStoreCount === 0) {
-    throw new Error("Please use the first store creation endpoint.");
-  }
-
-  // Check subscription limits
-  const subscription = await prisma.subscribe.findFirst({
-    where: {
-      userId: user.id,
-      status: { in: ["ACTIVE", "TRIAL"] },
-      endDate: { gte: new Date() },
-    },
-    include: {
-      package: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  if (!subscription) {
-    throw new Error("No active subscription found. Please subscribe to create additional stores.");
-  }
-
-  if (existingStoreCount >= subscription.package.maxStores) {
-    throw new Error(
-      `Maximum ${subscription.package.maxStores} stores allowed for ${subscription.package.displayName}. Please upgrade your subscription.`
-    );
-  }
-
-  const existingStore = await prisma.store.findFirst({
-    where: {
-      name: name.trim(),
-      userId: user.id,
-    },
-  });
-
-  if (existingStore) {
-    throw new Error("Store with this name already exists");
-  }
-
-  let logoUrl = null;
-  let stampUrl = null;
-
-  const result = await prisma.$transaction(async (tx) => {
-    // Create store
-    const store = await tx.store.create({
-      data: {
-        name: name.trim(),
-        storeType: storeType?.trim() || null,
-        description: description?.trim() || null,
-        address: address?.trim() || null,
-        phone: phone?.trim() || null,
-        whatsapp: whatsapp?.trim() || null,
-        email: email?.trim() || null,
-        userId: user.id,
-      },
-    });
-
-    if (logo) {
-      try {
-        logoUrl = await uploadStoreLogoToStorage(logo, store.id, store.id, store.name);
-      } catch (error) {
-        throw new Error("Failed to upload store logo");
-      }
-    }
-
-    if (stamp) {
-      try {
-        stampUrl = await uploadStoreStampToStorage(stamp, store.id, store.id, store.name);
-      } catch (error) {
-        throw new Error("Failed to upload store stamp");
-      }
-    }
-
-    // Update store with images
-    const updatedStore = await tx.store.update({
-      where: { id: store.id },
-      data: { 
-        logo: logoUrl, 
-        stamp: stampUrl 
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
-    });
-
-    // Create store settings
-    await tx.storeSetting.create({
-      data: {
-        storeId: store.id,
-        tax: 0,
-        currency: "IDR",
-        timezone: "Asia/Jakarta",
-      },
-    });
-
-    return updatedStore;
-  });
-
-  return result;
-};
-
-// Get all stores for a user
-export const getUserStores = async (user) => {
-  const stores = await prisma.store.findMany({
-    where: {
-      userId: user.id,
+  const store = await prisma.store.create({
+    data: {
+      ...storeData,
+      storeType: "RETAIL",
       isActive: true,
     },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-      settings: true,
+  });
+
+  return store;
+};
+
+// Create additional store
+export const createStore = async (storeData) => {
+  const { userId } = storeData;
+  const canCreate = await canCreateStore(userId);
+  if (!canCreate.canCreate) {
+    throw new Error(canCreate.reason);
+  }
+
+  const store = await prisma.store.create({
+    data: {
+      ...storeData,
+      storeType: "RETAIL", // default
+      isActive: true,
+    },
+  });
+
+  return store;
+};
+
+// Get user's stores
+export const getUserStores = async (userId) => {
+  const stores = await prisma.store.findMany({
+    where: {
+      userId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      address: true,
+      phone: true,
+      whatsapp: true,
+      email: true,
+      logo: true,
+      stamp: true,
+      storeType: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
       _count: {
         select: {
-          categories: true,
           products: true,
-          customers: true,
-          orders: true,
+          categories: true,
           members: true,
         },
       },
@@ -259,22 +84,24 @@ export const getUserStores = async (user) => {
   return stores;
 };
 
-// Get store by ID with access control
-export const getStoreById = async (storeId, user) => {
-  const where = {
-    id: storeId,
-    isActive: true,
-  };
-
-  if (user.role !== "ADMIN") {
-    where.OR = [
-      { userId: user.id },
-      { members: { some: { userId: user.id, isActive: true } } }
-    ];
-  }
-
+// Get store by ID
+export const getStoreById = async (storeId, userId) => {
   const store = await prisma.store.findFirst({
-    where,
+    where: {
+      id: storeId,
+      OR: [
+        { userId }, // Owner
+        {
+          members: {
+            some: {
+              userId,
+              isActive: true,
+            },
+          },
+        }, // Member
+      ],
+      isActive: true,
+    },
     include: {
       user: {
         select: {
@@ -283,27 +110,10 @@ export const getStoreById = async (storeId, user) => {
           email: true,
         },
       },
-      settings: true,
-      members: {
-        where: { isActive: true },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              avatar: true,
-            },
-          },
-        },
-        orderBy: { joinedAt: "desc" },
-      },
       _count: {
         select: {
-          categories: true,
           products: true,
-          customers: true,
-          orders: true,
+          categories: true,
           members: true,
         },
       },
@@ -311,109 +121,33 @@ export const getStoreById = async (storeId, user) => {
   });
 
   if (!store) {
-    throw new Error("Store not found or you don't have permission to access it");
+    throw new Error("Store not found or you don't have access to this store");
   }
 
   return store;
 };
 
 // Update store
-export const updateStore = async (storeId, updateData, user) => {
-  const { name, storeType, description, address, phone, whatsapp, email, logo, stamp } = updateData;
-
-  const existingStore = await getStoreById(storeId, user);
-
-  if (name && name.trim() !== existingStore.name) {
-    const nameConflict = await prisma.store.findFirst({
-      where: {
-        name: name.trim(),
-        userId: existingStore.userId,
-        id: { not: storeId },
-        isActive: true,
-      },
-    });
-
-    if (nameConflict) {
-      throw new Error("Store with this name already exists");
-    }
-  }
-
-  let logoUrl = existingStore.logo;
-  let stampUrl = existingStore.stamp;
-
-  // Handle logo upload
-  if (logo) {
-    try {
-      logoUrl = await uploadStoreLogoToStorage(
-        logo,
-        storeId,
-        storeId,
-        name || existingStore.name
-      );
-      if (existingStore.logo) {
-        try {
-          await deleteFileFromStorage(existingStore.logo);
-        } catch (deleteError) {
-          // Silent fail for file deletion
-        }
-      }
-    } catch (error) {
-      throw new Error("Failed to upload store logo");
-    }
-  }
-
-  if (stamp) {
-    try {
-      stampUrl = await uploadStoreStampToStorage(
-        stamp,
-        storeId,
-        storeId,
-        name || existingStore.name
-      );
-      if (existingStore.stamp) {
-        try {
-          await deleteFileFromStorage(existingStore.stamp);
-        } catch (deleteError) {
-          // Silent fail for file deletion
-        }
-      }
-    } catch (error) {
-      throw new Error("Failed to upload store stamp");
-    }
-  }
-
-  // Update store
-  const updatedStore = await prisma.store.update({
-    where: { id: storeId },
-    data: {
-      ...(name && { name: name.trim() }),
-      ...(storeType !== undefined && { storeType: storeType?.trim() || null }),
-      ...(description !== undefined && { description: description?.trim() || null }),
-      ...(address !== undefined && { address: address?.trim() || null }),
-      ...(phone !== undefined && { phone: phone?.trim() || null }),
-      ...(whatsapp !== undefined && { whatsapp: whatsapp?.trim() || null }),
-      ...(email !== undefined && { email: email?.trim() || null }),
-      ...(logoUrl !== existingStore.logo && { logo: logoUrl }),
-      ...(stampUrl !== existingStore.stamp && { stamp: stampUrl }),
+export const updateStore = async (storeId, userId, updateData) => {
+  const existingStore = await prisma.store.findFirst({
+    where: {
+      id: storeId,
+      userId,
+      isActive: true,
     },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-      settings: true,
-      _count: {
-        select: {
-          categories: true,
-          products: true,
-          customers: true,
-          orders: true,
-          members: true,
-        },
-      },
+  });
+
+  if (!existingStore) {
+    throw new Error("Store not found or you don't have permission to update this store");
+  }
+
+  const updatedStore = await prisma.store.update({
+    where: {
+      id: storeId,
+    },
+    data: {
+      ...updateData,
+      updatedAt: new Date(),
     },
   });
 
@@ -421,42 +155,47 @@ export const updateStore = async (storeId, updateData, user) => {
 };
 
 // Delete store (soft delete)
-export const deleteStore = async (storeId, user) => {
-  const store = await getStoreById(storeId, user);
-
-  if (user.role !== "ADMIN" && store.userId !== user.id) {
-    throw new Error("Only store owner can delete this store");
-  }
-
-  await prisma.store.update({
-    where: { id: storeId },
-    data: { 
-      isActive: false,
-      name: `${store.name} (Deleted)`,
+export const deleteStore = async (storeId, userId) => {
+  const existingStore = await prisma.store.findFirst({
+    where: {
+      id: storeId,
+      userId,
+      isActive: true,
     },
   });
 
-  return { message: "Store deleted successfully" };
+  if (!existingStore) {
+    throw new Error("Store not found or you don't have permission to delete this store");
+  }
+
+  const deletedStore = await prisma.store.update({
+    where: {
+      id: storeId,
+    },
+    data: {
+      isActive: false,
+      updatedAt: new Date(),
+    },
+  });
+
+  return { message: "Store deleted successfully", store: deletedStore };
 };
 
-// Get all stores (admin only)
+// Admin: Get all stores with pagination
 export const getAllStores = async (page = 1, limit = 10, search = "") => {
   const skip = (page - 1) * limit;
+  
+  const where = search
+    ? {
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { description: { contains: search, mode: "insensitive" } },
+          { user: { name: { contains: search, mode: "insensitive" } } },
+        ],
+      }
+    : {};
 
-  const where = {
-    isActive: true,
-    ...(search && {
-      OR: [
-        { name: { contains: search, mode: "insensitive" } },
-        { storeType: { contains: search, mode: "insensitive" } },
-        { address: { contains: search, mode: "insensitive" } },
-        { user: { name: { contains: search, mode: "insensitive" } } },
-        { user: { email: { contains: search, mode: "insensitive" } } },
-      ],
-    }),
-  };
-
-  const [stores, total] = await Promise.all([
+  const [stores, totalStores] = await Promise.all([
     prisma.store.findMany({
       where,
       include: {
@@ -469,19 +208,17 @@ export const getAllStores = async (page = 1, limit = 10, search = "") => {
         },
         _count: {
           select: {
-            categories: true,
             products: true,
-            customers: true,
-            orders: true,
+            categories: true,
             members: true,
           },
         },
       },
+      skip,
+      take: limit,
       orderBy: {
         createdAt: "desc",
       },
-      skip,
-      take: limit,
     }),
     prisma.store.count({ where }),
   ]);
@@ -490,9 +227,9 @@ export const getAllStores = async (page = 1, limit = 10, search = "") => {
     stores,
     pagination: {
       currentPage: page,
-      totalPages: Math.ceil(total / limit),
-      totalItems: total,
-      itemsPerPage: limit,
+      totalPages: Math.ceil(totalStores / limit),
+      totalStores,
+      limit,
     },
   };
 };

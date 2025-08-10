@@ -8,73 +8,107 @@ import {
   deleteStore,
   getAllStores,
 } from "../services/storeService.js";
+import { checkSubscriptionStatus } from "../services/subscriptionService.js";
 
-// Create first store (for new users)
+// Create first store - HARUS PUNYA SUBSCRIPTION
 export const createFirstStoreController = async (req, res) => {
   try {
-    const user = req.user;
-    const storeData = req.body;
+    const userId = req.user.id;
+    const { name, description, address, phone, whatsapp, email } = req.body;
 
-    const result = await createFirstStore(storeData, user);
-    return successResponse(res, result, result.message, 201);
+    if (!name || !description || !address) {
+      return errorResponse(res, "Name, description, and address are required", 400);
+    }
+
+    // ✅ CHECK SUBSCRIPTION STATUS FIRST
+    const subscriptionStatus = await checkSubscriptionStatus(userId);
+    if (!subscriptionStatus.hasAccess) {
+      return errorResponse(
+        res,
+        "Active subscription required to create store. Please subscribe first to access this feature.",
+        403,
+        {
+          subscriptionRequired: true,
+          message: "You must have an active subscription to create your first store",
+          redirectTo: "/subscription/packages"
+        }
+      );
+    }
+
+    const storeData = {
+      userId,
+      name,
+      description,
+      address,
+      phone,
+      whatsapp,
+      email,
+    };
+
+    const store = await createFirstStore(storeData);
+    return successResponse(
+      res,
+      store,
+      "First store created successfully! You can now start managing your inventory.",
+      201
+    );
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
 };
 
-// Create new store (untuk additional stores)
+// Create additional store
 export const createNewStore = async (req, res) => {
   try {
-    const { name, storeType, description, address, phone, whatsapp, email, logo, stamp } = req.body;
-    const user = req.user;
+    const userId = req.user.id;
+    const { name, description, address, phone, whatsapp, email } = req.body;
 
-    if (!name) {
-      return errorResponse(res, "Store name is required", 400);
+    if (!name || !description || !address) {
+      return errorResponse(res, "Name, description, and address are required", 400);
     }
 
-    if (name.trim().length < 2) {
-      return errorResponse(
-        res,
-        "Store name must be at least 2 characters",
-        400
-      );
-    }
+    const storeData = {
+      userId,
+      name,
+      description,
+      address,
+      phone,
+      whatsapp,
+      email,
+    };
 
-    const store = await createStore(
-      { name, storeType, description, address, phone, whatsapp, email, logo, stamp },
-      user
-    );
+    const store = await createStore(storeData);
     return successResponse(res, store, "Store created successfully", 201);
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
 };
 
-// Get all stores for current user
+// Get user's stores
 export const getMyStores = async (req, res) => {
   try {
-    const user = req.user;
-    const stores = await getUserStores(user);
+    const userId = req.user.id;
+    const stores = await getUserStores(userId);
     return successResponse(res, stores, "Stores retrieved successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
 };
 
-// Get single store by ID
+// Get store details
 export const getStoreDetails = async (req, res) => {
   try {
     const { storeId } = req.params;
-    const user = req.user;
+    const userId = req.user.id;
 
     if (!storeId) {
       return errorResponse(res, "Store ID is required", 400);
     }
 
-    const store = await getStoreById(storeId, user);
-    return successResponse(res, store, "Store retrieved successfully");
+    const store = await getStoreById(storeId, userId);
+    return successResponse(res, store, "Store details retrieved successfully");
   } catch (error) {
-    return errorResponse(res, error.message, 404);
+    return errorResponse(res, error.message, 400);
   }
 };
 
@@ -82,26 +116,14 @@ export const getStoreDetails = async (req, res) => {
 export const updateStoreDetails = async (req, res) => {
   try {
     const { storeId } = req.params;
-    const { name, storeType, description, address, phone, whatsapp, email, logo, stamp } = req.body;
-    const user = req.user;
+    const userId = req.user.id;
+    const updateData = req.body;
 
     if (!storeId) {
       return errorResponse(res, "Store ID is required", 400);
     }
 
-    if (name && name.trim().length < 2) {
-      return errorResponse(
-        res,
-        "Store name must be at least 2 characters",
-        400
-      );
-    }
-
-    const store = await updateStore(
-      storeId,
-      { name, storeType, description, address, phone, whatsapp, email, logo, stamp },
-      user
-    );
+    const store = await updateStore(storeId, userId, updateData);
     return successResponse(res, store, "Store updated successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
@@ -112,36 +134,25 @@ export const updateStoreDetails = async (req, res) => {
 export const deleteStoreById = async (req, res) => {
   try {
     const { storeId } = req.params;
-    const user = req.user;
+    const userId = req.user.id;
 
     if (!storeId) {
       return errorResponse(res, "Store ID is required", 400);
     }
 
-    const result = await deleteStore(storeId, user);
+    const result = await deleteStore(storeId, userId);
     return successResponse(res, result, "Store deleted successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
 };
 
-// Get all stores (admin only)
+// Admin: Get all stores
 export const getAllStoresAdmin = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const search = req.query.search || "";
-
-    if (page < 1 || limit < 1) {
-      return errorResponse(res, "Page and limit must be positive numbers", 400);
-    }
-
-    if (limit > 100) {
-      return errorResponse(res, "Limit cannot exceed 100", 400);
-    }
-
-    const result = await getAllStores(page, limit, search);
-    return successResponse(res, result, "Stores retrieved successfully");
+    const { page = 1, limit = 10, search } = req.query;
+    const result = await getAllStores(parseInt(page), parseInt(limit), search);
+    return successResponse(res, result, "All stores retrieved successfully");
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }

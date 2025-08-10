@@ -1,312 +1,361 @@
 import prisma from "../config/prisma.js";
 import duitku from "../config/duitku.js";
+import { createNewUserSubscription } from "./subscriptionService.js";
 
-// Create payment for subscription
+// Create subscription payment with enhanced error handling
 export const createSubscriptionPayment = async (userId, packageId) => {
-  console.log(`💳 Starting payment creation for user: ${userId}`);
+  console.log("\n💰 === CREATING SUBSCRIPTION PAYMENT ===");
+  console.log(`👤 User ID: ${userId}`);
+  console.log(`📦 Package ID: ${packageId}`);
 
-  // Get user data
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { 
-      id: true, 
-      name: true, 
-      email: true, 
-      phone: true,
-      whatsapp: true 
-    },
-  });
+  try {
+    // Get user data with validation
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { 
+        id: true, 
+        name: true, 
+        email: true, 
+        phone: true,
+        whatsapp: true,
+        isEmailVerified: true
+      },
+    });
 
-  if (!user) {
-    throw new Error("User not found");
-  }
+    if (!user) {
+      throw new Error("User not found");
+    }
 
-  // Get subscription package
-  const subscriptionPackage = await prisma.subscriptionPackage.findUnique({
-    where: { id: packageId },
-  });
+    if (!user.isEmailVerified) {
+      throw new Error("Email must be verified before making payment");
+    }
 
-  if (!subscriptionPackage) {
-    throw new Error("Subscription package not found");
-  }
+    // Get subscription package
+    const subscriptionPackage = await prisma.subscriptionPackage.findUnique({
+      where: { id: packageId, isActive: true },
+    });
 
-  console.log(`📦 Package selected: ${subscriptionPackage.displayName} - Rp ${subscriptionPackage.price}`);
+    if (!subscriptionPackage) {
+      throw new Error("Subscription package not found or inactive");
+    }
 
-  // Generate unique merchant order ID
-  const timestamp = Date.now();
-  const userIdSuffix = userId.slice(-8);
-  const merchantOrderId = `SUB_${timestamp}_${userIdSuffix}`;
+    console.log(`📋 User: ${user.name} (${user.email})`);
+    console.log(`📦 Package: ${subscriptionPackage.displayName} - Rp ${subscriptionPackage.price.toLocaleString('id-ID')}`);
 
-  console.log(`🔖 Generated merchantOrderId: ${merchantOrderId}`);
+    // Check for existing pending payments
+    const existingPendingPayment = await prisma.payment.findFirst({
+      where: {
+        userId,
+        status: "PENDING",
+        expiredAt: { gte: new Date() }
+      },
+      orderBy: { createdAt: "desc" }
+    });
 
-  // Create payment record in database
-  const payment = await prisma.payment.create({
-    data: {
-      userId,
-      merchantCode: duitku.merchantCode,
-      reference: `REF_${timestamp}`,
+    if (existingPendingPayment) {
+      console.log("⚠️ Found existing pending payment, returning existing payment URL");
+      
+      return {
+        payment: existingPendingPayment,
+        paymentUrl: existingPendingPayment.paymentUrl,
+        package: subscriptionPackage,
+        expiresAt: existingPendingPayment.expiredAt,
+        isExisting: true,
+        message: "Using existing pending payment. Complete payment or wait for expiration to create new one."
+      };
+    }
+
+    // Generate unique merchant order ID
+    const timestamp = Date.now();
+    const userIdSuffix = userId.slice(-8).toUpperCase();
+    const merchantOrderId = `SUB_${timestamp}_${userIdSuffix}`;
+
+    console.log(`🆔 Generated Order ID: ${merchantOrderId}`);
+
+    // Calculate expiry (24 hours from now)
+    const expiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    // Create payment record FIRST
+    const payment = await prisma.payment.create({
+      data: {
+        userId,
+        packageId,
+        merchantCode: duitku.merchantCode,
+        reference: `REF_${timestamp}_${userIdSuffix}`,
+        merchantOrderId,
+        paymentAmount: subscriptionPackage.price,
+        productDetail: `Subscription ${subscriptionPackage.displayName}`,
+        status: "PENDING",
+        expiryPeriod: 1440,
+        expiredAt,
+        callbackUrl: duitku.callbackUrl,
+        returnUrl: duitku.returnUrl,
+      },
+    });
+
+    console.log(`💾 Payment record created: ${payment.id}`);
+
+    // Create Duitku payment
+    const duitkuPayment = await duitku.createPayment({
       merchantOrderId,
       paymentAmount: subscriptionPackage.price,
       productDetail: `Subscription ${subscriptionPackage.displayName}`,
-      status: "PENDING",
-      expiryPeriod: 1440, // 24 hours
-      expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      callbackUrl: duitku.callbackUrl,
-      returnUrl: duitku.returnUrl,
-    },
-  });
+      email: user.email,
+      phoneNumber: user.whatsapp || user.phone || "081234567890",
+      customerName: user.name,
+      expiryPeriod: 1440,
+    });
 
-  console.log(`💾 Payment record created: ${payment.id}`);
+    // Handle Duitku response
+    if (!duitkuPayment.success) {
+      console.error("❌ Duitku payment creation failed");
+      
+      // Update payment status to failed
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { 
+          status: "FAILED",
+          statusMessage: JSON.stringify(duitkuPayment.error)
+        },
+      });
+      
+      throw new Error(`Payment gateway error: ${JSON.stringify(duitkuPayment.error)}`);
+    }
 
-  // Create Duitku payment request
-  const duitkuPayment = await duitku.createPayment({
-    merchantOrderId,
-    paymentAmount: parseFloat(subscriptionPackage.price),
-    productDetail: `Langganan ${subscriptionPackage.displayName}`,
-    email: user.email,
-    phoneNumber: user.whatsapp || user.phone || "081234567890",
-    customerName: user.name,
-    expiryPeriod: 1440,
-  });
-
-  // Handle Duitku API response
-  if (!duitkuPayment.success) {
-    console.error("❌ Duitku payment creation failed:", duitkuPayment.error);
-    
-    // Update payment status to failed
-    await prisma.payment.update({
+    // Update payment with Duitku response data
+    const updatedPayment = await prisma.payment.update({
       where: { id: payment.id },
-      data: { 
-        status: "FAILED",
-        statusMessage: JSON.stringify(duitkuPayment.error)
+      data: {
+        reference: duitkuPayment.data.reference || payment.reference,
+        paymentUrl: duitkuPayment.data.paymentUrl,
+        paymentMethod: duitkuPayment.data.paymentMethod || "Credit Card",
+        signature: duitkuPayment.data.signature,
+        statusMessage: "Payment URL generated successfully"
       },
     });
-    
-    throw new Error(`Failed to create payment: ${JSON.stringify(duitkuPayment.error)}`);
-  }
 
-  console.log("✅ Duitku payment created successfully");
+    console.log("✅ Payment creation completed successfully");
+    console.log("=========================================\n");
 
-  // Update payment record with Duitku response
-  const updatedPayment = await prisma.payment.update({
-    where: { id: payment.id },
-    data: {
-      reference: duitkuPayment.data.reference || payment.reference,
+    return {
+      payment: updatedPayment,
       paymentUrl: duitkuPayment.data.paymentUrl,
-      paymentMethod: duitkuPayment.data.vaNumber ? "Virtual Account" : "Credit Card",
-      signature: duitkuPayment.data.signature,
-    },
-  });
+      paymentDetails: {
+        reference: duitkuPayment.data.reference,
+        amount: subscriptionPackage.price,
+        currency: "IDR",
+        expiryHours: 24
+      },
+      package: subscriptionPackage,
+      expiresAt: payment.expiredAt,
+      instructions: {
+        sandbox: process.env.NODE_ENV !== 'production',
+        steps: [
+          "1. Click on the payment URL to proceed",
+          "2. Fill in your payment details",
+          "3. Complete the payment process",
+          "4. Wait for confirmation",
+          "5. Your subscription will be activated automatically"
+        ],
+        testCards: process.env.NODE_ENV !== 'production' ? [
+          "Visa: 4811111111111114 (12/25, CVV: 123)",
+          "Mastercard: 5555555555554444 (12/25, CVV: 123)",
+          "For testing: Use any valid future expiry date"
+        ] : undefined
+      }
+    };
 
-  console.log(`✅ Payment updated with Duitku response: ${updatedPayment.reference}`);
-
-  return {
-    payment: updatedPayment,
-    paymentUrl: duitkuPayment.data.paymentUrl,
-    paymentDetails: duitkuPayment.data,
-    package: subscriptionPackage,
-    expiresAt: payment.expiredAt,
-    instructions: {
-      sandbox: process.env.NODE_ENV !== 'production',
-      message: process.env.NODE_ENV !== 'production' 
-        ? "This is sandbox payment. Use test credit cards or force success in Duitku dashboard."
-        : "Complete payment within 24 hours to activate subscription."
-    }
-  };
+  } catch (error) {
+    console.error("❌ Payment creation failed:", error.message);
+    console.log("=========================================\n");
+    throw error;
+  }
 };
 
-// Handle payment callback from Duitku
+// Enhanced callback handler with better error handling
 export const handlePaymentCallback = async (callbackData) => {
-  console.log("\n🔄 Starting callback processing...");
+  console.log("\n🔔 === PAYMENT CALLBACK PROCESSING ===");
+  console.log("📥 Received callback data:", JSON.stringify(callbackData, null, 2));
 
-  // Validate callback data structure
-  if (!callbackData || typeof callbackData !== 'object') {
-    throw new Error("Invalid callback data format");
-  }
-
-  // Extract callback fields with default values
-  const {
-    merchantCode = null,
-    amount = null,
-    merchantOrderId = null,
-    productDetail = null,
-    resultCode = null,
-    signature = null,
-  } = callbackData;
-
-  console.log("📋 Callback data extracted:", {
-    merchantCode,
-    amount,
-    merchantOrderId,
-    resultCode,
-    productDetail,
-    hasSignature: !!signature
-  });
-
-  // Validate required fields
-  if (!merchantCode || !amount || !merchantOrderId || !resultCode) {
-    throw new Error("Missing required callback fields: merchantCode, amount, merchantOrderId, resultCode");
-  }
-
-  // Skip signature verification in development/sandbox
-  if (process.env.NODE_ENV === 'production') {
-    console.log("🔐 Verifying signature (Production mode)...");
-    if (!signature) {
-      throw new Error("Signature is required in production");
+  try {
+    // Validate callback structure
+    if (!callbackData || typeof callbackData !== 'object') {
+      throw new Error("Invalid callback data format");
     }
+
+    // Extract and validate required fields
+    const {
+      merchantCode,
+      amount,
+      merchantOrderId,
+      productDetail,
+      resultCode,
+      signature,
+      reference
+    } = callbackData;
+
+    const requiredFields = { merchantCode, amount, merchantOrderId, resultCode };
+    const missingFields = Object.entries(requiredFields)
+      .filter(([key, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required callback fields: ${missingFields.join(", ")}`);
+    }
+
+    console.log("📋 Callback Summary:", {
+      merchantCode,
+      merchantOrderId,
+      amount: `Rp ${parseInt(amount).toLocaleString('id-ID')}`,
+      resultCode,
+      status: resultCode === "00" ? "SUCCESS" : "FAILED",
+      reference,
+      hasSignature: !!signature
+    });
+
+    // Verify signature (with sandbox tolerance)
+    const isSignatureValid = duitku.verifyCallback(merchantCode, amount, merchantOrderId, signature);
     
-    if (!duitku.verifyCallback(merchantCode, amount, merchantOrderId, signature)) {
+    if (!isSignatureValid && process.env.NODE_ENV === 'production') {
       throw new Error("Invalid signature - callback rejected");
     }
-    console.log("✅ Signature verified successfully");
-  } else {
-    console.log("🚀 Development mode - skipping signature verification");
-  }
 
-  // Find payment record
-  const payment = await prisma.payment.findUnique({
-    where: { merchantOrderId },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true
+    if (!isSignatureValid) {
+      console.log("⚠️ Signature verification failed - proceeding in development mode");
+    } else {
+      console.log("✅ Signature verification passed");
+    }
+
+    // Find payment record
+    const payment = await prisma.payment.findUnique({
+      where: { merchantOrderId },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true }
+        },
+        package: {
+          select: { id: true, name: true, displayName: true, price: true }
         }
       },
-    },
-  });
-
-  if (!payment) {
-    throw new Error(`Payment not found for merchantOrderId: ${merchantOrderId}`);
-  }
-
-  console.log(`📦 Payment found: ${payment.id} for user: ${payment.user.name}`);
-
-  // Determine payment success
-  const isSuccess = resultCode === "00";
-  const newStatus = isSuccess ? "SUCCESS" : "FAILED";
-
-  console.log(`📊 Payment result: ${resultCode} -> ${newStatus}`);
-
-  // Update payment status
-  const updatedPayment = await prisma.payment.update({
-    where: { id: payment.id },
-    data: {
-      status: newStatus,
-      statusMessage: productDetail || `Callback result: ${resultCode}`,
-      paidAt: isSuccess ? new Date() : null,
-    },
-  });
-
-  console.log(`💾 Payment status updated: ${payment.merchantOrderId} -> ${newStatus}`);
-
-  // Create subscription if payment successful and not already created
-  if (isSuccess && !payment.subscriptionId) {
-    console.log("🚀 Creating subscription...");
-
-    // Check if user has ever subscribed (for new user promo)
-    const hasEverSubscribed = await prisma.subscribe.count({
-      where: { userId: payment.userId },
     });
 
-    const isNewUser = hasEverSubscribed === 0;
-    console.log(`👤 User type: ${isNewUser ? "NEW USER (gets promo)" : "EXISTING USER"}`);
-
-    // Find package by price or default to STANDARD
-    let subscriptionPackage = await prisma.subscriptionPackage.findFirst({
-      where: { price: parseFloat(amount) },
-    });
-
-    if (!subscriptionPackage) {
-      console.log("⚠️ Package not found by price, using STANDARD package");
-      subscriptionPackage = await prisma.subscriptionPackage.findFirst({
-        where: { name: "STANDARD" },
-      });
+    if (!payment) {
+      throw new Error(`Payment record not found: ${merchantOrderId}`);
     }
 
-    if (!subscriptionPackage) {
-      console.error("❌ No subscription package found!");
-      throw new Error("No subscription package available");
+    console.log(`📦 Payment found: ${payment.id} for user ${payment.user.name}`);
+
+    // Check if already processed
+    if (payment.status !== "PENDING") {
+      console.log(`⚠️ Payment already processed with status: ${payment.status}`);
+      return {
+        merchantOrderId,
+        status: payment.status,
+        message: "Payment already processed",
+        userId: payment.userId
+      };
     }
 
-    console.log(`📦 Using package: ${subscriptionPackage.displayName}`);
+    // Determine payment success
+    const isSuccess = resultCode === "00";
+    const newStatus = isSuccess ? "SUCCESS" : "FAILED";
+    const statusMessage = isSuccess 
+      ? "Payment completed successfully"
+      : `Payment failed with code: ${resultCode}`;
 
-    // Calculate subscription dates
-    const now = new Date();
-    const endDate = isNewUser 
-      ? new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000)) // New user: 60 days (1+1 month)
-      : new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000)); // Regular: 30 days
+    console.log(`📊 Processing result: ${resultCode} → ${newStatus}`);
 
-    console.log(`📅 Subscription period: ${now.toISOString()} to ${endDate.toISOString()}`);
-    console.log(`⏰ Duration: ${isNewUser ? "60 days (New user promo)" : "30 days (Regular)"}`);
-
-    // Create subscription
-    const subscription = await prisma.subscribe.create({
+    // Update payment status
+    const updatedPayment = await prisma.payment.update({
+      where: { id: payment.id },
       data: {
-        userId: payment.userId,
-        packageId: subscriptionPackage.id,
-        status: "ACTIVE",
-        startDate: now,
-        endDate,
-        isTrial: false,
-        isNewUserPromo: isNewUser,
-        paidMonths: 1,
-        bonusMonths: isNewUser ? 1 : 0,
-        totalMonths: isNewUser ? 2 : 1,
-        autoRenew: true,
+        status: newStatus,
+        statusMessage,
+        paidAt: isSuccess ? new Date() : null,
+        reference: reference || payment.reference,
       },
     });
 
-    console.log(`✅ Subscription created: ${subscription.id}`);
+    console.log(`💾 Payment updated: ${merchantOrderId} → ${newStatus}`);
 
-    // Link payment to subscription
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { subscriptionId: subscription.id },
-    });
+    // Create subscription if payment successful
+    if (isSuccess) {
+      console.log("🚀 Payment successful - Creating subscription...");
 
-    console.log("🔗 Payment linked to subscription");
+      try {
+        const subscriptionResult = await createNewUserSubscription(
+          payment.userId, 
+          payment.packageId || payment.package.id
+        );
 
-    // Log success summary
-    console.log("\n🎉 === SUBSCRIPTION ACTIVATION SUMMARY ===");
-    console.log(`👤 User: ${payment.user.name} (${payment.user.email})`);
-    console.log(`📦 Package: ${subscriptionPackage.displayName}`);
-    console.log(`💰 Amount: Rp ${amount}`);
-    console.log(`🎁 New User Promo: ${isNewUser ? "YES" : "NO"}`);
-    console.log(`⏰ Access Duration: ${isNewUser ? "2 months" : "1 month"}`);
-    console.log(`📅 Valid Until: ${endDate.toLocaleDateString('id-ID')}`);
-    console.log("==============================================\n");
+        // Link payment to subscription
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { subscriptionId: subscriptionResult.subscription.id },
+        });
+
+        console.log(`✅ Subscription created: ${subscriptionResult.subscription.id}`);
+        
+        // Log success summary
+        const isNewUser = subscriptionResult.promotion?.isNewUser || false;
+        console.log("\n🎉 === SUBSCRIPTION ACTIVATION SUCCESS ===");
+        console.log(`👤 User: ${payment.user.name} (${payment.user.email})`);
+        console.log(`📦 Package: ${payment.package?.displayName || 'Unknown'}`);
+        console.log(`💰 Amount: Rp ${parseInt(amount).toLocaleString('id-ID')}`);
+        console.log(`🎁 New User Promo: ${isNewUser ? "YES (2 months access)" : "NO (1 month access)"}`);
+        console.log(`📅 Valid Until: ${subscriptionResult.subscription.endDate.toLocaleDateString('id-ID')}`);
+        console.log("============================================");
+
+      } catch (subscriptionError) {
+        console.error("❌ Subscription creation failed:", subscriptionError.message);
+        
+        // Update payment with subscription error
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            statusMessage: `Payment successful but subscription creation failed: ${subscriptionError.message}`
+          },
+        });
+        
+        // Don't throw error here - payment was successful
+      }
+    }
+
+    console.log("✅ Callback processing completed");
+    console.log("==================================\n");
+
+    return {
+      merchantOrderId,
+      status: newStatus,
+      userId: payment.userId,
+      amount: parseInt(amount),
+      message: statusMessage
+    };
+
+  } catch (error) {
+    console.error("❌ Callback processing failed:", error.message);
+    console.log("==================================\n");
+    throw error;
   }
-
-  console.log("✅ Callback processing completed successfully");
-  return updatedPayment;
 };
 
-// Get payment status
+// Get payment status with enhanced details
 export const getPaymentStatus = async (merchantOrderId) => {
-  console.log(`🔍 Getting payment status for: ${merchantOrderId}`);
+  console.log(`🔍 Getting payment status: ${merchantOrderId}`);
 
   const payment = await prisma.payment.findUnique({
     where: { merchantOrderId },
     include: {
       user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
+        select: { id: true, name: true, email: true },
+      },
+      package: {
+        select: { id: true, name: true, displayName: true, price: true }
       },
       subscription: {
         include: {
           package: {
-            select: {
-              name: true,
-              displayName: true,
-              price: true,
-              maxStores: true,
-              maxMembers: true,
-            },
+            select: { name: true, displayName: true, maxStores: true, maxMembers: true },
           },
         },
       },
@@ -314,56 +363,74 @@ export const getPaymentStatus = async (merchantOrderId) => {
   });
 
   if (!payment) {
-    throw new Error(`Payment not found for merchantOrderId: ${merchantOrderId}`);
+    throw new Error(`Payment not found: ${merchantOrderId}`);
   }
 
-  console.log(`📦 Payment status: ${payment.status}`);
+  const now = new Date();
+  const isExpired = payment.expiredAt && now > payment.expiredAt;
+  const timeRemaining = payment.expiredAt ? Math.max(0, payment.expiredAt - now) : null;
+
+  console.log(`📊 Payment status: ${payment.status}${isExpired ? ' (EXPIRED)' : ''}`);
 
   return {
     ...payment,
-    isExpired: payment.expiredAt ? new Date() > payment.expiredAt : false,
-    timeRemaining: payment.expiredAt ? Math.max(0, payment.expiredAt - new Date()) : null,
+    isExpired,
+    timeRemaining,
+    timeRemainingHours: timeRemaining ? Math.ceil(timeRemaining / (1000 * 60 * 60)) : 0,
+    formattedAmount: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`,
+    statusLabel: getPaymentStatusLabel(payment.status),
   };
 };
 
-// Get user payment history
-export const getUserPaymentHistory = async (userId, page = 1, limit = 10) => {
-  console.log(`📋 Getting payment history for user: ${userId}`);
+// Get user payment history with enhanced filtering
+export const getUserPaymentHistory = async (userId, page = 1, limit = 10, status = null) => {
+  console.log(`📋 Getting payment history: User ${userId}, Page ${page}, Status: ${status || 'ALL'}`);
 
   const skip = (page - 1) * limit;
+  
+  const whereClause = { userId };
+  if (status) {
+    whereClause.status = status;
+  }
 
   const [payments, total] = await Promise.all([
     prisma.payment.findMany({
-      where: { userId },
+      where: whereClause,
       include: {
+        package: {
+          select: { name: true, displayName: true, price: true }
+        },
         subscription: {
           include: {
             package: {
-              select: {
-                name: true,
-                displayName: true,
-                price: true,
-              },
-            },
-          },
+              select: { name: true, displayName: true }
+            }
+          }
         },
       },
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     }),
-    prisma.payment.count({ where: { userId } }),
+    prisma.payment.count({ where: whereClause }),
   ]);
 
-  console.log(`📊 Found ${payments.length} payments out of ${total} total`);
+  console.log(`📊 Found ${payments.length}/${total} payments`);
 
-  // Add computed fields
-  const enrichedPayments = payments.map(payment => ({
-    ...payment,
-    isExpired: payment.expiredAt ? new Date() > payment.expiredAt : false,
-    statusLabel: getPaymentStatusLabel(payment.status),
-    amountFormatted: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`,
-  }));
+  const enrichedPayments = payments.map(payment => {
+    const now = new Date();
+    const isExpired = payment.expiredAt && now > payment.expiredAt;
+    
+    return {
+      ...payment,
+      isExpired,
+      statusLabel: getPaymentStatusLabel(payment.status),
+      formattedAmount: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`,
+      timeRemainingHours: payment.expiredAt && !isExpired 
+        ? Math.ceil((payment.expiredAt - now) / (1000 * 60 * 60)) 
+        : 0,
+    };
+  });
 
   return {
     payments: enrichedPayments,
@@ -375,14 +442,20 @@ export const getUserPaymentHistory = async (userId, page = 1, limit = 10) => {
       hasNextPage: page < Math.ceil(total / limit),
       hasPrevPage: page > 1,
     },
+    summary: {
+      totalPayments: total,
+      pendingCount: await prisma.payment.count({ where: { ...whereClause, status: "PENDING" } }),
+      successCount: await prisma.payment.count({ where: { ...whereClause, status: "SUCCESS" } }),
+      failedCount: await prisma.payment.count({ where: { ...whereClause, status: "FAILED" } }),
+    }
   };
 };
 
-// Helper function to get payment status label
+// Helper function for status labels
 const getPaymentStatusLabel = (status) => {
   const labels = {
     PENDING: "Menunggu Pembayaran",
-    SUCCESS: "Pembayaran Berhasil",
+    SUCCESS: "Pembayaran Berhasil", 
     FAILED: "Pembayaran Gagal",
     EXPIRED: "Kadaluarsa",
   };

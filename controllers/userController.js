@@ -19,12 +19,10 @@ export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Check required fields
     if (!name || !email || !password) {
       return errorResponse(res, "Name, email, and password are required", 400);
     }
 
-    // Validate password strength
     const passwordError = validatePassword(password);
     if (passwordError) {
       return errorResponse(res, passwordError, 400);
@@ -96,9 +94,34 @@ export const login = async (req, res) => {
     }
 
     const result = await loginUser(email, password);
-    return successResponse(res, result, "Login successful. Welcome back!");
+
+    const response = {
+      ...result,
+      userType: result.user.role,
+      accessType: determineAccessType(result.user)
+    };
+
+    return successResponse(res, response, "Login successful. Welcome back!");
   } catch (error) {
     return errorResponse(res, error.message, 401);
+  }
+};
+
+// Helper function to determine access type
+const determineAccessType = (user) => {
+  if (user.role === "ADMIN") {
+    return "ADMIN_ACCESS";
+  }
+  
+  if (user.role === "MEMBER") {
+    return "MEMBER_ACCESS";
+  }
+  
+  // For USER role
+  if (user.isSubscribed) {
+    return "USER_WITH_SUBSCRIPTION";
+  } else {
+    return "USER_NEEDS_SUBSCRIPTION";
   }
 };
 
@@ -109,7 +132,6 @@ export const updateProfile = async (req, res) => {
     const updateData = req.body;
     const file = req.file;
 
-    // Validate password if provided
     if (updateData.password) {
       const passwordError = validatePassword(updateData.password);
       if (passwordError) {
@@ -177,7 +199,6 @@ export const resetUserPassword = async (req, res) => {
       );
     }
 
-    // Validate new password strength
     const passwordError = validatePassword(password);
     if (passwordError) {
       return errorResponse(res, passwordError, 400);
