@@ -1,4 +1,3 @@
-// routes/inviteRoutes.js
 import express from "express";
 import {
   createInvite,
@@ -9,20 +8,20 @@ import {
   removeMemberFromStore,
 } from "../controllers/inviteController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
+import { requireSubscription } from "../middlewares/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-// Public routes
 router.post("/accept", acceptInvite);
+
 router.use(authenticateToken);
 
-// Invitation management
-router.post("/", createInvite);
-router.get("/store/:storeId", getInvites);
-router.delete("/:inviteId", revokeInviteCode);
+router.post("/", requireSubscription, createInvite);
+router.get("/store/:storeId", requireSubscription, getInvites);
+router.delete("/:inviteId", requireSubscription, revokeInviteCode);
 
-// Member management
-router.get("/store/:storeId/members", getMembers);
-router.delete("/store/:storeId/members/:memberId", removeMemberFromStore);
+// Member management requires subscription
+router.get("/store/:storeId/members", requireSubscription, getMembers);
+router.delete("/store/:storeId/members/:memberId", requireSubscription, removeMemberFromStore);
 
 export default router;

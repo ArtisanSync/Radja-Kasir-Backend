@@ -27,7 +27,6 @@ export const getUserActiveSubscription = async (userId) => {
   return subscription;
 };
 
-// Check if user has active subscription (untuk middleware)
 export const hasActiveSubscription = async (userId) => {
   const subscription = await getUserActiveSubscription(userId);
   return !!subscription;
@@ -52,13 +51,13 @@ export const createNewUserSubscription = async (userId, packageId) => {
     where: { userId },
   });
 
-  if (hasEverSubscribed > 0) {
-    throw new Error("New user promotion is only available for first-time subscribers");
-  }
-
+  const isNewUser = hasEverSubscribed === 0;
   const now = new Date();
+  
   // NEW USER: Bayar 1 bulan, dapat akses 2 bulan
-  const endDate = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000)); // 60 days access
+  // EXISTING USER: Bayar 1 bulan, dapat akses 1 bulan
+  const daysToAdd = isNewUser ? 60 : 30; // 60 days for new users, 30 for existing
+  const endDate = new Date(now.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
 
   const subscription = await prisma.subscribe.create({
     data: {
@@ -68,10 +67,10 @@ export const createNewUserSubscription = async (userId, packageId) => {
       startDate: now,
       endDate,
       isTrial: false,
-      isNewUserPromo: true,
+      isNewUserPromo: isNewUser,
       paidMonths: 1,
-      bonusMonths: 1,
-      totalMonths: 2,
+      bonusMonths: isNewUser ? 1 : 0,
+      totalMonths: isNewUser ? 2 : 1,
       autoRenew: true,
     },
     include: {
@@ -81,20 +80,26 @@ export const createNewUserSubscription = async (userId, packageId) => {
 
   return {
     subscription,
-    paymentRequired: true,
-    amount: subscriptionPackage.price,
-    promotion: {
+    promotion: isNewUser ? {
+      isNewUser: true,
       originalPrice: subscriptionPackage.price,
       paidMonths: 1,
       bonusMonths: 1,
       totalAccess: "2 bulan",
       message: `Promo New User: Bayar Rp ${subscriptionPackage.price.toLocaleString('id-ID')} untuk 1 bulan, dapatkan akses 2 bulan penuh!`
+    } : {
+      isNewUser: false,
+      originalPrice: subscriptionPackage.price,
+      paidMonths: 1,
+      bonusMonths: 0,
+      totalAccess: "1 bulan",
+      message: `Subscription ${subscriptionPackage.displayName} - akses 1 bulan`
     }
   };
 };
 
-// Create regular subscription (1 bulan = 1 bulan)
-export const createRegularSubscription = async (userId, packageId) => {
+// Create regular subscription renewal (untuk existing users)
+export const renewSubscription = async (userId, packageId) => {
   const subscriptionPackage = await prisma.subscriptionPackage.findUnique({
     where: { id: packageId },
   });
@@ -103,7 +108,6 @@ export const createRegularSubscription = async (userId, packageId) => {
     throw new Error("Subscription package not found");
   }
 
-  // Cancel existing subscription if any
   const existingSubscription = await getUserActiveSubscription(userId);
   if (existingSubscription) {
     await prisma.subscribe.update({
@@ -116,7 +120,6 @@ export const createRegularSubscription = async (userId, packageId) => {
   }
 
   const now = new Date();
-  // REGULAR: Bayar 1 bulan, dapat akses 1 bulan
   const endDate = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000)); // 30 days
 
   const subscription = await prisma.subscribe.create({
@@ -140,9 +143,7 @@ export const createRegularSubscription = async (userId, packageId) => {
 
   return {
     subscription,
-    paymentRequired: true,
-    amount: subscriptionPackage.price,
-    message: `Subscription activated for ${subscriptionPackage.displayName} - 1 month access`
+    message: `Subscription ${subscriptionPackage.displayName} renewed for 1 month`
   };
 };
 
@@ -224,8 +225,9 @@ export const checkSubscriptionStatus = async (userId) => {
     return { 
       isActive: false, 
       status: "NO_SUBSCRIPTION",
-      message: "Tidak ada subscription aktif",
-      hasAccess: false
+      message: "Tidak ada subscription aktif. Silakan berlangganan untuk mengakses fitur.",
+      hasAccess: false,
+      subscription: null
     };
   }
 

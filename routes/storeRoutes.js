@@ -10,20 +10,21 @@ import {
 } from "../controllers/storeController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 import { authorizeAdmin } from "../middlewares/roleMiddleware.js";
+import { requireSubscription } from "../middlewares/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-// Create first store (for new users)
-router.post("/first", authenticateToken, createFirstStoreController);
+// Authentication required for all routes
+router.use(authenticateToken);
 
-// Protected routes
-router.post("/", authenticateToken, createNewStore);
-router.get("/my-stores", authenticateToken, getMyStores);
-router.get("/:storeId", authenticateToken, getStoreDetails);
-router.put("/:storeId", authenticateToken, updateStoreDetails);
-router.delete("/:storeId", authenticateToken, deleteStoreById);
+router.post("/first", requireSubscription, createFirstStoreController);
+router.post("/", requireSubscription, createNewStore);
+router.get("/my-stores", requireSubscription, getMyStores);
+router.get("/:storeId", requireSubscription, getStoreDetails);
+router.put("/:storeId", requireSubscription, updateStoreDetails);
+router.delete("/:storeId", requireSubscription, deleteStoreById);
 
 // Admin only routes
-router.get("/", authenticateToken, authorizeAdmin, getAllStoresAdmin);
+router.get("/", authorizeAdmin, getAllStoresAdmin);
 
 export default router;

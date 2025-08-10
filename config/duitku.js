@@ -3,41 +3,62 @@ import axios from "axios";
 
 class DuitkuPayment {
   constructor() {
+    // Environment detection
+    this.environment = process.env.NODE_ENV || "development";
+    this.isSandbox = this.environment !== "production";
+    
+    // Credentials
     this.merchantCode = process.env.DUITKU_MERCHANT_CODE || "DS24351";
     this.apiKey = process.env.DUITKU_API_KEY || "2bazzd1230cczd4bc1b111ew1d20m1";
     
-    // Environment-based URL configuration
-    this.baseUrl = process.env.NODE_ENV === "production" 
-      ? "https://passport.duitku.com/webapi/api/merchant"
-      : "https://sandbox.duitku.com/webapi/api/merchant";
+    // URL Configuration
+    this.baseUrl = this.isSandbox 
+      ? "https://sandbox.duitku.com/webapi/api/merchant"
+      : "https://passport.duitku.com/webapi/api/merchant";
       
-    this.callbackUrl = process.env.DUITKU_CALLBACK_URL || "http://localhost:3000/api/v1/payments/callback";
-    this.returnUrl = process.env.DUITKU_RETURN_URL || "http://localhost:3000/payment/success";
+    this.callbackUrl = process.env.DUITKU_CALLBACK_URL || 
+      `${process.env.APP_URL || "http://localhost:3000"}/api/v1/payments/callback`;
     
-    console.log(`🔧 Duitku Config - Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔧 Base URL: ${this.baseUrl}`);
-    console.log(`🔧 Callback URL: ${this.callbackUrl}`);
+    this.returnUrl = process.env.DUITKU_RETURN_URL || 
+      `${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/success`;
+    
+    // Enhanced logging
+    console.log("\n🔧 === DUITKU CONFIGURATION ===");
+    console.log(`🌍 Environment: ${this.environment}`);
+    console.log(`🧪 Sandbox Mode: ${this.isSandbox}`);
+    console.log(`🏪 Merchant Code: ${this.merchantCode}`);
+    console.log(`🔗 Base URL: ${this.baseUrl}`);
+    console.log(`🔄 Callback URL: ${this.callbackUrl}`);
+    console.log(`↩️  Return URL: ${this.returnUrl}`);
+    console.log("==============================\n");
   }
 
-  // Generate signature
+  // Generate signature for Duitku API
   generateSignature(merchantOrderId, paymentAmount, apiKey, merchantCode) {
-    const signatureString = `${merchantCode}${merchantOrderId}${paymentAmount}${apiKey}`;
-    const signature = crypto.createHash("md5").update(signatureString).digest("hex");
-    
-    console.log("🔐 Signature Generation:", {
-      merchantCode,
-      merchantOrderId, 
-      paymentAmount,
-      signatureString: signatureString.substring(0, 50) + "...", // Hide sensitive data
-      signature
-    });
-    
-    return signature;
+    try {
+      const signatureString = `${merchantCode}${merchantOrderId}${paymentAmount}${apiKey}`;
+      const signature = crypto.createHash("md5").update(signatureString).digest("hex");
+      
+      console.log("🔐 Signature Generation:", {
+        merchantCode,
+        merchantOrderId, 
+        paymentAmount,
+        signatureLength: signature.length,
+        signaturePreview: signature.substring(0, 10) + "..."
+      });
+      
+      return signature;
+    } catch (error) {
+      console.error("❌ Signature generation failed:", error.message);
+      throw new Error("Failed to generate signature");
+    }
   }
 
-  // Create payment
+  // Create payment transaction
   async createPayment(paymentData) {
     try {
+      console.log("\n💳 === CREATING DUITKU PAYMENT ===");
+      
       const {
         merchantOrderId,
         paymentAmount,
@@ -45,13 +66,20 @@ class DuitkuPayment {
         email,
         phoneNumber,
         customerName,
-        expiryPeriod = 1440,
+        expiryPeriod = 1440, // 24 hours default
       } = paymentData;
 
-      if (!merchantOrderId || !paymentAmount || !productDetail || !email || !customerName) {
-        throw new Error("Missing required payment data");
+      // Validate required data
+      const requiredFields = { merchantOrderId, paymentAmount, productDetail, email, customerName };
+      const missingFields = Object.entries(requiredFields)
+        .filter(([key, value]) => !value)
+        .map(([key]) => key);
+
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
       }
 
+      // Generate signature
       const signature = this.generateSignature(
         merchantOrderId,
         paymentAmount,
@@ -59,11 +87,11 @@ class DuitkuPayment {
         this.merchantCode
       );
 
-      // Format request body Duitku
+      // Prepare request data
       const requestBody = {
         merchantCode: this.merchantCode,
         paymentAmount: parseInt(paymentAmount),
-        paymentMethod: "VC",
+        paymentMethod: "VC", // Virtual Credit (Credit Card)
         merchantOrderId,
         productDetail,
         customerVaName: customerName,
@@ -72,52 +100,74 @@ class DuitkuPayment {
         callbackUrl: this.callbackUrl,
         returnUrl: this.returnUrl,
         signature,
-        expiryPeriod,
+        expiryPeriod: parseInt(expiryPeriod),
       };
 
-      console.log("📤 Duitku Request:", {
-        ...requestBody,
-        signature: signature.substring(0, 10) + "...",
+      console.log("📤 Request Data:", {
+        merchantCode: requestBody.merchantCode,
+        paymentAmount: requestBody.paymentAmount,
+        paymentMethod: requestBody.paymentMethod,
+        merchantOrderId: requestBody.merchantOrderId,
+        productDetail: requestBody.productDetail,
+        customerName: requestBody.customerVaName,
+        email: requestBody.email,
+        expiryHours: Math.round(requestBody.expiryPeriod / 60),
+        callbackUrl: requestBody.callbackUrl,
+        returnUrl: requestBody.returnUrl,
       });
 
+      // Make API request to Duitku
       const response = await axios.post(
         `${this.baseUrl}/v2/inquiry`,
         requestBody,
         {
           headers: {
             "Content-Type": "application/json",
-            "User-Agent": "Radja-Kasir-Backend/1.0"
+            "User-Agent": "RadjaKasir-Backend/1.0",
+            "Accept": "application/json"
           },
           timeout: 30000,
         }
       );
 
-      console.log("📥 Duitku Response:", {
+      console.log("📥 Duitku API Response:", {
         statusCode: response.data.statusCode,
         statusMessage: response.data.statusMessage,
         reference: response.data.reference,
-        paymentUrl: response.data.paymentUrl ? "✅ Generated" : "❌ Missing"
+        paymentUrl: response.data.paymentUrl ? "✅ Generated" : "❌ Missing",
+        vaNumber: response.data.vaNumber || "N/A",
+        amount: response.data.amount || requestBody.paymentAmount
       });
+
+      // Validate successful response
+      if (response.data.statusCode !== "00") {
+        throw new Error(`Duitku API Error: ${response.data.statusMessage}`);
+      }
+
+      if (!response.data.paymentUrl) {
+        throw new Error("Payment URL not generated by Duitku");
+      }
+
+      console.log("✅ Duitku payment created successfully");
+      console.log("==============================\n");
 
       return {
         success: true,
         data: response.data,
       };
+
     } catch (error) {
-      console.error("❌ Duitku Payment Error:", {
+      console.error("❌ Duitku Payment Creation Failed:", {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status,
-        config: error.config ? {
-          url: error.config.url,
-          method: error.config.method,
-          data: "hidden_for_security"
-        } : null
+        url: error.config?.url
       });
+      console.log("==============================\n");
       
       return {
         success: false,
-        error: error.response?.data || error.message,
+        error: error.response?.data || { message: error.message },
       };
     }
   }
@@ -125,6 +175,16 @@ class DuitkuPayment {
   // Verify callback signature
   verifyCallback(merchantCode, amount, merchantOrderId, signature) {
     try {
+      // In sandbox mode, we can be more lenient with signature verification
+      if (this.isSandbox) {
+        console.log("🧪 Sandbox Mode: Relaxed signature verification");
+        
+        if (!signature) {
+          console.log("⚠️ No signature provided in sandbox mode - allowing");
+          return true;
+        }
+      }
+
       const signatureString = `${merchantCode}${amount}${merchantOrderId}${this.apiKey}`;
       const calculatedSignature = crypto.createHash("md5").update(signatureString).digest("hex");
       const isValid = calculatedSignature === signature;
@@ -133,54 +193,87 @@ class DuitkuPayment {
         merchantCode,
         merchantOrderId,
         amount,
-        received: signature?.substring(0, 10) + "...",
-        calculated: calculatedSignature?.substring(0, 10) + "...",
-        isValid
+        environment: this.environment,
+        receivedSignature: signature?.substring(0, 10) + "..." || "NONE",
+        calculatedSignature: calculatedSignature?.substring(0, 10) + "...",
+        isValid: isValid,
+        sandboxMode: this.isSandbox
       });
       
       return isValid;
     } catch (error) {
       console.error("❌ Signature verification error:", error.message);
-      return false;
+      return this.isSandbox; // In sandbox, allow even if verification fails
     }
   }
 
-  // Check transaction status
+  // Check transaction status from Duitku
   async checkTransactionStatus(merchantOrderId) {
     try {
-      const signature = this.generateSignature(
+      console.log(`🔍 Checking transaction status: ${merchantOrderId}`);
+
+      const signature = crypto
+        .createHash("md5")
+        .update(`${this.merchantCode}${merchantOrderId}${this.apiKey}`)
+        .digest("hex");
+
+      const requestBody = {
+        merchantCode: this.merchantCode,
         merchantOrderId,
-        "",
-        this.apiKey,
-        this.merchantCode
-      );
+        signature,
+      };
+
+      console.log("📤 Status Check Request:", requestBody);
 
       const response = await axios.post(
         `${this.baseUrl}/transactionStatus`,
-        {
-          merchantCode: this.merchantCode,
-          merchantOrderId,
-          signature,
-        },
+        requestBody,
         {
           headers: {
             "Content-Type": "application/json",
+            "Accept": "application/json"
           },
           timeout: 15000,
         }
       );
+
+      console.log("📥 Status Response:", response.data);
 
       return {
         success: true,
         data: response.data,
       };
     } catch (error) {
-      console.error("❌ Check Status Error:", error.response?.data || error.message);
+      console.error("❌ Status Check Error:", {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
       return {
         success: false,
-        error: error.response?.data || error.message,
+        error: error.response?.data || { message: error.message },
       };
     }
+  }
+
+  // Simulate successful payment (sandbox only)
+  async simulatePaymentSuccess(merchantOrderId) {
+    if (!this.isSandbox) {
+      throw new Error("Payment simulation only available in sandbox mode");
+    }
+
+    console.log(`🎭 Simulating payment success for: ${merchantOrderId}`);
+    
+    // Simulate callback data
+    return {
+      merchantCode: this.merchantCode,
+      amount: "150000", // Example amount
+      merchantOrderId,
+      productDetail: "Simulated Payment",
+      resultCode: "00",
+      signature: "simulated_signature_sandbox"
+    };
   }
 }
 

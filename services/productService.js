@@ -81,7 +81,7 @@ export const createProduct = async (productData, file, userId) => {
 
   if (code) {
     const existingProduct = await prisma.product.findFirst({
-      where: { code, storeId, isActive: true } // Fixed: using isActive instead of active
+      where: { code, storeId, isActive: true }
     });
     if (existingProduct) {
       throw new Error("Product code already exists in this store");
@@ -110,7 +110,6 @@ export const createProduct = async (productData, file, userId) => {
       });
       imageUrl = uploadResponse.url;
     } catch (error) {
-      console.error("Image upload failed:", error);
       throw new Error("Failed to upload product image");
     }
   }
@@ -285,7 +284,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     discountPercent,
     discountRp,
     quantity,
-    isActive, // Fixed: using isActive instead of active
+    isActive,
     isFavorite
   } = updateData;
 
@@ -333,7 +332,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
         code, 
         storeId: existingProduct.storeId,
         id: { not: productId },
-        isActive: true // Fixed: using isActive instead of active
+        isActive: true
       }
     });
     if (codeExists) {
@@ -381,7 +380,6 @@ export const updateProduct = async (productId, updateData, file, userId) => {
       });
       imageUrl = uploadResponse.url;
     } catch (error) {
-      console.error("Image upload failed:", error);
       throw new Error("Failed to upload product image");
     }
   }
@@ -464,7 +462,6 @@ export const toggleFavoriteProduct = async (productId, userId) => {
   return updatedProduct;
 };
 
-// Delete product (soft delete)
 export const deleteProduct = async (productId, userId) => {
   const product = await getProductById(productId, userId);
 

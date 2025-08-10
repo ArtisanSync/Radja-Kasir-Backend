@@ -1,5 +1,5 @@
 import { errorResponse } from "../utils/response.js";
-import { hasActiveSubscription } from "../services/subscriptionService.js";
+import { checkSubscriptionStatus } from "../services/subscriptionService.js";
 
 // Check if user has active subscription
 export const requireSubscription = async (req, res, next) => {
@@ -7,17 +7,33 @@ export const requireSubscription = async (req, res, next) => {
     return errorResponse(res, "User not authenticated", 401);
   }
 
-  const hasSubscription = await hasActiveSubscription(req.user.id);
-
-  if (!hasSubscription) {
-    return errorResponse(
-      res,
-      "Active subscription required to access this feature",
-      403
-    );
+  // Admin bypass subscription check
+  if (req.user.role === "ADMIN") {
+    return next();
   }
 
-  next();
+  try {
+    const subscriptionStatus = await checkSubscriptionStatus(req.user.id);
+
+    if (!subscriptionStatus.hasAccess) {
+      return errorResponse(
+        res,
+        "Active subscription required to access this feature. Please subscribe to continue.",
+        403,
+        {
+          subscriptionRequired: true,
+          currentStatus: subscriptionStatus.status,
+          message: subscriptionStatus.message
+        }
+      );
+    }
+
+    req.subscription = subscriptionStatus.subscription;
+    next();
+  } catch (error) {
+    console.error("Subscription check error:", error);
+    return errorResponse(res, "Failed to verify subscription status", 500);
+  }
 };
 
 // Check if user is admin or has subscription
@@ -30,15 +46,25 @@ export const requireAdminOrSubscription = async (req, res, next) => {
     return next();
   }
 
-  const hasSubscription = await hasActiveSubscription(req.user.id);
+  try {
+    const subscriptionStatus = await checkSubscriptionStatus(req.user.id);
 
-  if (!hasSubscription) {
-    return errorResponse(
-      res,
-      "Admin role or active subscription required to access this feature",
-      403
-    );
+    if (!subscriptionStatus.hasAccess) {
+      return errorResponse(
+        res,
+        "Admin role or active subscription required to access this feature",
+        403,
+        {
+          subscriptionRequired: true,
+          currentStatus: subscriptionStatus.status
+        }
+      );
+    }
+
+    req.subscription = subscriptionStatus.subscription;
+    next();
+  } catch (error) {
+    console.error("Admin or subscription check error:", error);
+    return errorResponse(res, "Failed to verify access permissions", 500);
   }
-
-  next();
 };
