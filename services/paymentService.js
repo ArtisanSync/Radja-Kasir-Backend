@@ -9,7 +9,7 @@ export const createSubscriptionPayment = async (userId, packageId) => {
   console.log(`📦 Package ID: ${packageId}`);
 
   try {
-    // Get user data with validation
+    // Get user data with correct field names
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { 
@@ -17,8 +17,10 @@ export const createSubscriptionPayment = async (userId, packageId) => {
         name: true, 
         email: true, 
         phone: true,
-        whatsapp: true,
-        isEmailVerified: true
+        role: true,
+        isActive: true,
+        emailVerifiedAt: true, // Using emailVerifiedAt instead of isEmailVerified
+        createdAt: true
       },
     });
 
@@ -26,8 +28,12 @@ export const createSubscriptionPayment = async (userId, packageId) => {
       throw new Error("User not found");
     }
 
-    if (!user.isEmailVerified) {
-      throw new Error("Email must be verified before making payment");
+    if (!user.emailVerifiedAt) {
+      throw new Error("Email must be verified before making payment. Please check your email and verify your account first.");
+    }
+
+    if (!user.isActive) {
+      throw new Error("Account is not active. Please contact support.");
     }
 
     // Get subscription package
@@ -40,6 +46,7 @@ export const createSubscriptionPayment = async (userId, packageId) => {
     }
 
     console.log(`📋 User: ${user.name} (${user.email})`);
+    console.log(`✅ Email verified: ${user.emailVerifiedAt ? 'YES' : 'NO'}`);
     console.log(`📦 Package: ${subscriptionPackage.displayName} - Rp ${subscriptionPackage.price.toLocaleString('id-ID')}`);
 
     // Check for existing pending payments
@@ -47,7 +54,9 @@ export const createSubscriptionPayment = async (userId, packageId) => {
       where: {
         userId,
         status: "PENDING",
-        expiredAt: { gte: new Date() }
+        expiredAt: { gte: new Date() },
+        // Check by productDetail since no packageId field
+        productDetail: { contains: subscriptionPackage.displayName }
       },
       orderBy: { createdAt: "desc" }
     });
@@ -61,7 +70,7 @@ export const createSubscriptionPayment = async (userId, packageId) => {
         package: subscriptionPackage,
         expiresAt: existingPendingPayment.expiredAt,
         isExisting: true,
-        message: "Using existing pending payment. Complete payment or wait for expiration to create new one."
+        message: "You have an existing pending payment. Please complete the payment or wait for expiration to create a new one."
       };
     }
 
@@ -75,16 +84,23 @@ export const createSubscriptionPayment = async (userId, packageId) => {
     // Calculate expiry (24 hours from now)
     const expiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // Create payment record FIRST
+    // Create payment record WITHOUT packageId field (since it doesn't exist in schema)
     const payment = await prisma.payment.create({
       data: {
         userId,
-        packageId,
+        // packageId field doesn't exist in schema, so we store package info in productDetail
         merchantCode: duitku.merchantCode,
         reference: `REF_${timestamp}_${userIdSuffix}`,
         merchantOrderId,
         paymentAmount: subscriptionPackage.price,
-        productDetail: `Subscription ${subscriptionPackage.displayName}`,
+        // Store package info as JSON in productDetail
+        productDetail: JSON.stringify({
+          type: "subscription",
+          packageId: packageId,
+          packageName: subscriptionPackage.name,
+          displayName: subscriptionPackage.displayName,
+          description: `Subscription ${subscriptionPackage.displayName}`
+        }),
         status: "PENDING",
         expiryPeriod: 1440,
         expiredAt,
@@ -101,14 +117,14 @@ export const createSubscriptionPayment = async (userId, packageId) => {
       paymentAmount: subscriptionPackage.price,
       productDetail: `Subscription ${subscriptionPackage.displayName}`,
       email: user.email,
-      phoneNumber: user.whatsapp || user.phone || "081234567890",
+      phoneNumber: user.phone || "081234567890",
       customerName: user.name,
       expiryPeriod: 1440,
     });
 
     // Handle Duitku response
     if (!duitkuPayment.success) {
-      console.error("❌ Duitku payment creation failed");
+      console.error("❌ Duitku payment creation failed:", duitkuPayment.error);
       
       // Update payment status to failed
       await prisma.payment.update({
@@ -144,16 +160,20 @@ export const createSubscriptionPayment = async (userId, packageId) => {
         reference: duitkuPayment.data.reference,
         amount: subscriptionPackage.price,
         currency: "IDR",
-        expiryHours: 24
+        expiryHours: 24,
+        merchantOrderId: updatedPayment.merchantOrderId
       },
       package: subscriptionPackage,
       expiresAt: payment.expiredAt,
       instructions: {
         sandbox: process.env.NODE_ENV !== 'production',
+        message: process.env.NODE_ENV !== 'production' 
+          ? "This is sandbox payment. Use test credit cards or force success in development endpoints."
+          : "Complete your payment within 24 hours to activate your subscription.",
         steps: [
           "1. Click on the payment URL to proceed",
           "2. Fill in your payment details",
-          "3. Complete the payment process",
+          "3. Complete the payment process", 
           "4. Wait for confirmation",
           "5. Your subscription will be activated automatically"
         ],
@@ -226,16 +246,14 @@ export const handlePaymentCallback = async (callbackData) => {
       console.log("✅ Signature verification passed");
     }
 
-    // Find payment record
+    // Find payment record (without package relation since it doesn't exist)
     const payment = await prisma.payment.findUnique({
       where: { merchantOrderId },
       include: {
         user: {
           select: { id: true, name: true, email: true }
-        },
-        package: {
-          select: { id: true, name: true, displayName: true, price: true }
         }
+        // No package relation exists in schema
       },
     });
 
@@ -244,6 +262,15 @@ export const handlePaymentCallback = async (callbackData) => {
     }
 
     console.log(`📦 Payment found: ${payment.id} for user ${payment.user.name}`);
+
+    // Extract package info from productDetail JSON
+    let packageInfo = null;
+    try {
+      packageInfo = JSON.parse(payment.productDetail);
+    } catch (e) {
+      console.log("⚠️ Could not parse productDetail as JSON, using fallback");
+      packageInfo = { displayName: "Unknown Package" };
+    }
 
     // Check if already processed
     if (payment.status !== "PENDING") {
@@ -283,9 +310,15 @@ export const handlePaymentCallback = async (callbackData) => {
       console.log("🚀 Payment successful - Creating subscription...");
 
       try {
+        // Get packageId from productDetail JSON
+        const packageId = packageInfo?.packageId;
+        if (!packageId) {
+          throw new Error("Package ID not found in payment details");
+        }
+
         const subscriptionResult = await createNewUserSubscription(
           payment.userId, 
-          payment.packageId || payment.package.id
+          packageId
         );
 
         // Link payment to subscription
@@ -300,11 +333,25 @@ export const handlePaymentCallback = async (callbackData) => {
         const isNewUser = subscriptionResult.promotion?.isNewUser || false;
         console.log("\n🎉 === SUBSCRIPTION ACTIVATION SUCCESS ===");
         console.log(`👤 User: ${payment.user.name} (${payment.user.email})`);
-        console.log(`📦 Package: ${payment.package?.displayName || 'Unknown'}`);
+        console.log(`📦 Package: ${packageInfo?.displayName || 'Unknown'}`);
         console.log(`💰 Amount: Rp ${parseInt(amount).toLocaleString('id-ID')}`);
         console.log(`🎁 New User Promo: ${isNewUser ? "YES (2 months access)" : "NO (1 month access)"}`);
         console.log(`📅 Valid Until: ${subscriptionResult.subscription.endDate.toLocaleDateString('id-ID')}`);
         console.log("============================================");
+
+        return {
+          merchantOrderId,
+          status: newStatus,
+          userId: payment.userId,
+          amount: parseInt(amount),
+          message: statusMessage,
+          subscription: {
+            id: subscriptionResult.subscription.id,
+            status: subscriptionResult.subscription.status,
+            endDate: subscriptionResult.subscription.endDate,
+            isNewUserPromo: isNewUser
+          }
+        };
 
       } catch (subscriptionError) {
         console.error("❌ Subscription creation failed:", subscriptionError.message);
@@ -318,6 +365,13 @@ export const handlePaymentCallback = async (callbackData) => {
         });
         
         // Don't throw error here - payment was successful
+        return {
+          merchantOrderId,
+          status: newStatus,
+          userId: payment.userId,
+          amount: parseInt(amount),
+          message: `${statusMessage} (Subscription creation failed: ${subscriptionError.message})`
+        };
       }
     }
 
@@ -349,9 +403,6 @@ export const getPaymentStatus = async (merchantOrderId) => {
       user: {
         select: { id: true, name: true, email: true },
       },
-      package: {
-        select: { id: true, name: true, displayName: true, price: true }
-      },
       subscription: {
         include: {
           package: {
@@ -359,11 +410,20 @@ export const getPaymentStatus = async (merchantOrderId) => {
           },
         },
       },
+      // No package relation exists in schema
     },
   });
 
   if (!payment) {
     throw new Error(`Payment not found: ${merchantOrderId}`);
+  }
+
+  // Extract package info from productDetail
+  let packageInfo = null;
+  try {
+    packageInfo = JSON.parse(payment.productDetail);
+  } catch (e) {
+    packageInfo = { displayName: "Unknown Package" };
   }
 
   const now = new Date();
@@ -374,6 +434,7 @@ export const getPaymentStatus = async (merchantOrderId) => {
 
   return {
     ...payment,
+    packageInfo, // Add extracted package info
     isExpired,
     timeRemaining,
     timeRemainingHours: timeRemaining ? Math.ceil(timeRemaining / (1000 * 60 * 60)) : 0,
@@ -397,9 +458,6 @@ export const getUserPaymentHistory = async (userId, page = 1, limit = 10, status
     prisma.payment.findMany({
       where: whereClause,
       include: {
-        package: {
-          select: { name: true, displayName: true, price: true }
-        },
         subscription: {
           include: {
             package: {
@@ -407,6 +465,7 @@ export const getUserPaymentHistory = async (userId, page = 1, limit = 10, status
             }
           }
         },
+        // No package relation exists in schema
       },
       orderBy: { createdAt: "desc" },
       skip,
@@ -421,8 +480,17 @@ export const getUserPaymentHistory = async (userId, page = 1, limit = 10, status
     const now = new Date();
     const isExpired = payment.expiredAt && now > payment.expiredAt;
     
+    // Extract package info from productDetail
+    let packageInfo = null;
+    try {
+      packageInfo = JSON.parse(payment.productDetail);
+    } catch (e) {
+      packageInfo = { displayName: "Unknown Package" };
+    }
+    
     return {
       ...payment,
+      packageInfo, // Add extracted package info
       isExpired,
       statusLabel: getPaymentStatusLabel(payment.status),
       formattedAmount: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`,
@@ -460,4 +528,31 @@ const getPaymentStatusLabel = (status) => {
     EXPIRED: "Kadaluarsa",
   };
   return labels[status] || status;
+};
+
+// Cancel expired payments (utility function)
+export const cancelExpiredPayments = async () => {
+  try {
+    console.log("🧹 Checking for expired payments...");
+    
+    const expiredPayments = await prisma.payment.updateMany({
+      where: {
+        status: "PENDING",
+        expiredAt: { lt: new Date() }
+      },
+      data: {
+        status: "EXPIRED",
+        statusMessage: "Payment expired - automatically cancelled"
+      }
+    });
+
+    if (expiredPayments.count > 0) {
+      console.log(`✅ Cancelled ${expiredPayments.count} expired payments`);
+    }
+
+    return expiredPayments;
+  } catch (error) {
+    console.error("❌ Failed to cancel expired payments:", error.message);
+    throw error;
+  }
 };

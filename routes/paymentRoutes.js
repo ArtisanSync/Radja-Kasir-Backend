@@ -4,8 +4,10 @@ import {
   paymentCallback,
   checkPaymentStatus,
   getPaymentHistory,
+  cleanupExpiredPayments,
 } from "../controllers/paymentController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
+import { authorizeAdmin } from "../middlewares/roleMiddleware.js";
 import { createNewUserSubscription } from "../services/subscriptionService.js";
 import { handlePaymentCallback } from "../services/paymentService.js";
 import { successResponse, errorResponse } from "../utils/response.js";
@@ -25,7 +27,10 @@ router.post("/create", createPayment);
 router.get("/status/:merchantOrderId", checkPaymentStatus);
 router.get("/history", getPaymentHistory);
 
-// Development/Testing endpoints
+// Admin routes
+router.post("/cleanup-expired", authorizeAdmin, cleanupExpiredPayments);
+
+// Development/Testing endpoints (only in non-production)
 if (process.env.NODE_ENV !== 'production') {
   console.log("🚀 Development payment endpoints enabled");
   
@@ -80,7 +85,7 @@ if (process.env.NODE_ENV !== 'production') {
 
       const payment = await prisma.payment.findUnique({
         where: { merchantOrderId },
-        include: { user: true, package: true }
+        include: { user: true }
       });
 
       if (!payment) {
@@ -91,12 +96,20 @@ if (process.env.NODE_ENV !== 'production') {
         return errorResponse(res, `Payment already processed: ${payment.status}`, 400);
       }
 
+      // Extract package info from productDetail
+      let packageInfo = null;
+      try {
+        packageInfo = JSON.parse(payment.productDetail);
+      } catch (e) {
+        packageInfo = { displayName: "Unknown Package" };
+      }
+
       // Create simulated callback data
       const callbackData = {
         merchantCode: duitku.merchantCode,
         amount: payment.paymentAmount.toString(),
         merchantOrderId,
-        productDetail: payment.productDetail,
+        productDetail: packageInfo?.description || payment.productDetail,
         resultCode,
         reference: payment.reference,
         signature: "dev_simulated_signature"
@@ -113,7 +126,7 @@ if (process.env.NODE_ENV !== 'production') {
         originalPayment: {
           id: payment.id,
           user: payment.user.name,
-          package: payment.package?.displayName,
+          package: packageInfo?.displayName,
           amount: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`
         },
         devMode: true,
@@ -139,7 +152,7 @@ if (process.env.NODE_ENV !== 'production') {
 
       const payment = await prisma.payment.findUnique({
         where: { merchantOrderId },
-        include: { user: true, package: true }
+        include: { user: true }
       });
 
       if (!payment) {
@@ -148,6 +161,14 @@ if (process.env.NODE_ENV !== 'production') {
 
       if (payment.status === 'SUCCESS') {
         return errorResponse(res, "Payment already successful", 400);
+      }
+
+      // Extract package info from productDetail
+      let packageInfo = null;
+      try {
+        packageInfo = JSON.parse(payment.productDetail);
+      } catch (e) {
+        packageInfo = { displayName: "Unknown Package" };
       }
 
       // Update payment to success
@@ -163,25 +184,28 @@ if (process.env.NODE_ENV !== 'production') {
       // Create subscription if not exists
       let subscription = null;
       if (!payment.subscriptionId) {
-        const subscriptionResult = await createNewUserSubscription(
-          payment.userId, 
-          payment.packageId || payment.package?.id
-        );
-        
-        subscription = subscriptionResult.subscription;
-        
-        // Link payment to subscription
-        await prisma.payment.update({
-          where: { id: payment.id },
-          data: { subscriptionId: subscription.id }
-        });
+        const packageId = packageInfo?.packageId;
+        if (packageId) {
+          const subscriptionResult = await createNewUserSubscription(
+            payment.userId, 
+            packageId
+          );
+          
+          subscription = subscriptionResult.subscription;
+          
+          // Link payment to subscription
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: { subscriptionId: subscription.id }
+          });
+        }
       }
 
       return successResponse(res, {
         payment: updatedPayment,
         subscription,
         user: payment.user.name,
-        package: payment.package?.displayName,
+        package: packageInfo?.displayName,
         amount: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`,
         devMode: true,
         message: "Payment forced to success - subscription activated"
@@ -199,19 +223,29 @@ if (process.env.NODE_ENV !== 'production') {
       const payments = await prisma.payment.findMany({
         include: {
           user: { select: { name: true, email: true } },
-          package: { select: { displayName: true, price: true } },
           subscription: { select: { id: true, status: true, endDate: true } }
         },
         orderBy: { createdAt: 'desc' },
         take: 50
       });
 
-      const enrichedPayments = payments.map(payment => ({
-        ...payment,
-        formattedAmount: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`,
-        isExpired: payment.expiredAt ? new Date() > payment.expiredAt : false,
-        timeRemaining: payment.expiredAt ? Math.max(0, payment.expiredAt - new Date()) : null
-      }));
+      const enrichedPayments = payments.map(payment => {
+        // Extract package info from productDetail
+        let packageInfo = null;
+        try {
+          packageInfo = JSON.parse(payment.productDetail);
+        } catch (e) {
+          packageInfo = { displayName: "Unknown Package" };
+        }
+
+        return {
+          ...payment,
+          packageInfo,
+          formattedAmount: `Rp ${payment.paymentAmount.toLocaleString('id-ID')}`,
+          isExpired: payment.expiredAt ? new Date() > payment.expiredAt : false,
+          timeRemaining: payment.expiredAt ? Math.max(0, payment.expiredAt - new Date()) : null
+        };
+      });
 
       return successResponse(res, {
         payments: enrichedPayments,
@@ -220,6 +254,37 @@ if (process.env.NODE_ENV !== 'production') {
       }, "All payments retrieved (Development Mode)");
       
     } catch (error) {
+      return errorResponse(res, error.message, 400);
+    }
+  });
+
+  // Reset user payments (development only)
+  router.delete('/dev/reset-user-payments', async (req, res) => {
+    try {
+      const userId = req.user.id;
+      
+      console.log(`🗑️ DEV: Resetting all payments for user ${userId}`);
+
+      // Delete all payments for user
+      const deletedPayments = await prisma.payment.deleteMany({
+        where: { userId }
+      });
+
+      // Also reset subscriptions
+      const deletedSubscriptions = await prisma.subscribe.deleteMany({
+        where: { userId }
+      });
+
+      return successResponse(res, {
+        deletedPayments: deletedPayments.count,
+        deletedSubscriptions: deletedSubscriptions.count,
+        userId,
+        devMode: true,
+        message: "All user payments and subscriptions have been reset"
+      }, "User payments reset completed");
+      
+    } catch (error) {
+      console.error("❌ DEV reset error:", error.message);
       return errorResponse(res, error.message, 400);
     }
   });
