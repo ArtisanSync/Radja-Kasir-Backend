@@ -7,6 +7,7 @@ import subscriptionRoutes from "./subscriptionRoutes.js";
 import inviteRoutes from "./inviteRoutes.js";
 import paymentRoutes from "./paymentRoutes.js";
 import adminRoutes from "./adminRoutes.js";
+import reportRoutes from "./reportRoutes.js";
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ router.use("/subscriptions", subscriptionRoutes);
 router.use("/invites", inviteRoutes);
 router.use("/payments", paymentRoutes);
 router.use("/admin", adminRoutes);
+router.use("/reports", reportRoutes);
 
 // Health check
 router.get("/health", (req, res) => {

@@ -9,7 +9,9 @@
     "dev": "nodemon app.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "seed:transactions": "node scripts/seedTransactions.js --seed",
+    "cleanup:transactions": "node scripts/seedTransactions.js --cleanup"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -21,7 +23,9 @@
     "@prisma/client": "^6.12.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
     "dotenv": "^17.2.0",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "imagekit": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
