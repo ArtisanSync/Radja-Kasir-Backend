@@ -49,18 +49,24 @@ export const getProduct = async (req, res) => {
   }
 };
 
-// Update product
+// Update product 
 export const updateExistingProduct = async (req, res) => {
   try {
     const { productId } = req.params;
     const userId = req.user.id;
     const updateData = req.body;
     const file = req.file;
+    const hasUpdateData = Object.keys(updateData).length > 0 || file;
+    
+    if (!hasUpdateData) {
+      return errorResponse(res, "No data provided for update", 400);
+    }
 
     const product = await updateProduct(productId, updateData, file, userId);
     return successResponse(res, product, "Product updated successfully");
   } catch (error) {
-    return errorResponse(res, error.message, 400);
+    const statusCode = error.message.includes("not found") ? 404 : 400;
+    return errorResponse(res, error.message, statusCode);
   }
 };
 
@@ -73,7 +79,8 @@ export const toggleFavorite = async (req, res) => {
     const product = await toggleFavoriteProduct(productId, userId);
     return successResponse(res, product, "Product favorite status updated");
   } catch (error) {
-    return errorResponse(res, error.message, 400);
+    const statusCode = error.message.includes("not found") ? 404 : 400;
+    return errorResponse(res, error.message, statusCode);
   }
 };
 
@@ -86,7 +93,8 @@ export const removeProduct = async (req, res) => {
     const result = await deleteProduct(productId, userId);
     return successResponse(res, result, "Product deleted successfully");
   } catch (error) {
-    return errorResponse(res, error.message, 400);
+    const statusCode = error.message.includes("not found") ? 404 : 400;
+    return errorResponse(res, error.message, statusCode);
   }
 };
 
