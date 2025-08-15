@@ -62,7 +62,7 @@ export const createProduct = async (productData, file, userId) => {
       id: storeId,
       OR: [
         { userId: userId },
-        { members: { some: { userId: userId } } }
+        { members: { some: { userId: userId, isActive: true } } }
       ]
     }
   });
@@ -81,7 +81,7 @@ export const createProduct = async (productData, file, userId) => {
 
   if (code) {
     const existingProduct = await prisma.product.findFirst({
-      where: { code, storeId, active: true }
+      where: { code, storeId, isActive: true }
     });
     if (existingProduct) {
       throw new Error("Product code already exists in this store");
@@ -110,7 +110,6 @@ export const createProduct = async (productData, file, userId) => {
       });
       imageUrl = uploadResponse.url;
     } catch (error) {
-      console.error("Image upload failed:", error);
       throw new Error("Failed to upload product image");
     }
   }
@@ -127,19 +126,19 @@ export const createProduct = async (productData, file, userId) => {
       },
     });
 
-  await tx.productVariant.create({
-  data: {
-    productId: product.id,
-    unitId,
-    name: "Default",
-    quantity: parseInt(quantity) || 0,
-    capitalPrice: parseFloat(capitalPrice) || 0,
-    price: parseFloat(price) || 0,
-    discountPercent: parseFloat(discountPercent) || 0,
-    discountRp: parseFloat(discountRp) || 0,
-    image: imageUrl,
-  },
-});
+    await tx.productVariant.create({
+      data: {
+        productId: product.id,
+        unitId,
+        name: "Default",
+        quantity: parseInt(quantity) || 0,
+        capitalPrice: parseFloat(capitalPrice) || 0,
+        price: parseFloat(price) || 0,
+        discountPercent: parseFloat(discountPercent) || 0,
+        discountRp: parseFloat(discountRp) || 0,
+        image: imageUrl,
+      },
+    });
 
     return await tx.product.findUnique({
       where: { id: product.id },
@@ -175,7 +174,7 @@ export const getProductsByStore = async (storeId, userId, filters = {}) => {
       id: storeId,
       OR: [
         { userId: userId },
-        { members: { some: { userId: userId } } }
+        { members: { some: { userId: userId, isActive: true } } }
       ]
     }
   });
@@ -186,7 +185,7 @@ export const getProductsByStore = async (storeId, userId, filters = {}) => {
 
   const where = {
     storeId,
-    active: true,
+    isActive: true,
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -258,7 +257,7 @@ export const getProductById = async (productId, userId) => {
       id: product.storeId,
       OR: [
         { userId: userId },
-        { members: { some: { userId: userId } } }
+        { members: { some: { userId: userId, isActive: true } } }
       ]
     }
   });
@@ -285,31 +284,40 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     discountPercent,
     discountRp,
     quantity,
-    active,
+    isActive,
     isFavorite
   } = updateData;
 
-  if (name !== undefined && (!name || name.trim().length === 0)) {
-    throw new Error("Product name cannot be empty");
+  if (name !== undefined) {
+    if (!name || name.trim().length === 0) {
+      throw new Error("Product name cannot be empty");
+    }
   }
 
-  if (price !== undefined && parseFloat(price) <= 0) {
-    throw new Error("Selling price must be greater than 0");
+  if (price !== undefined) {
+    if (parseFloat(price) <= 0) {
+      throw new Error("Selling price must be greater than 0");
+    }
   }
 
-  if (capitalPrice !== undefined && parseFloat(capitalPrice) < 0) {
-    throw new Error("Capital price cannot be negative");
+  if (capitalPrice !== undefined) {
+    if (parseFloat(capitalPrice) < 0) {
+      throw new Error("Capital price cannot be negative");
+    }
   }
 
-  if (quantity !== undefined && parseInt(quantity) < 0) {
-    throw new Error("Quantity cannot be negative");
+  if (quantity !== undefined) {
+    if (parseInt(quantity) < 0) {
+      throw new Error("Quantity cannot be negative");
+    }
   }
+  const currentVariant = existingProduct.variants[0] || {};
+  const currentPrice = price !== undefined ? parseFloat(price) : parseFloat(currentVariant.price || 0);
+  const currentCapitalPrice = capitalPrice !== undefined ? parseFloat(capitalPrice) : parseFloat(currentVariant.capitalPrice || 0);
+  const currentDiscountPercent = discountPercent !== undefined ? parseFloat(discountPercent) : parseFloat(currentVariant.discountPercent || 0);
+  const currentDiscountRp = discountRp !== undefined ? parseFloat(discountRp) : parseFloat(currentVariant.discountRp || 0);
 
   if (discountPercent !== undefined || discountRp !== undefined) {
-    const currentPrice = price !== undefined ? parseFloat(price) : parseFloat(existingProduct.variants[0]?.price || 0);
-    const currentDiscountPercent = discountPercent !== undefined ? parseFloat(discountPercent) : parseFloat(existingProduct.variants[0]?.discountPercent || 0);
-    const currentDiscountRp = discountRp !== undefined ? parseFloat(discountRp) : parseFloat(existingProduct.variants[0]?.discountRp || 0);
-
     if (currentDiscountPercent > 0 && currentDiscountRp > 0) {
       throw new Error("Cannot apply both percentage and amount discount simultaneously");
     }
@@ -327,21 +335,23 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
   }
 
-  if (code && code !== existingProduct.code) {
+  if ((capitalPrice !== undefined || price !== undefined) && currentCapitalPrice > currentPrice) {
+    throw new Error("Capital price should not exceed selling price");
+  }
+  if (code !== undefined && code !== existingProduct.code) {
     const codeExists = await prisma.product.findFirst({
       where: { 
         code, 
         storeId: existingProduct.storeId,
         id: { not: productId },
-        active: true
+        isActive: true
       }
     });
     if (codeExists) {
       throw new Error("Product code already exists in this store");
     }
   }
-
-  if (categoryId) {
+  if (categoryId !== undefined && categoryId !== null) {
     const category = await prisma.category.findFirst({
       where: { id: categoryId, storeId: existingProduct.storeId }
     });
@@ -349,8 +359,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
       throw new Error("Category not found in this store");
     }
   }
-
-  if (unitId) {
+  if (unitId !== undefined) {
     const unit = await prisma.unit.findUnique({
       where: { id: unitId }
     });
@@ -359,17 +368,8 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
   }
 
-  if (capitalPrice && price && parseFloat(capitalPrice) > parseFloat(price)) {
-    throw new Error("Capital price should not exceed selling price");
-  }
-
-  if (discountRp && price && parseFloat(discountRp) >= parseFloat(price)) {
-    throw new Error("Discount amount cannot exceed selling price");
-  }
-
   let imageUrl = existingProduct.image;
 
-  // Upload new image if provided
   if (file) {
     try {
       const uploadResponse = await imagekit.upload({
@@ -381,51 +381,59 @@ export const updateProduct = async (productId, updateData, file, userId) => {
       });
       imageUrl = uploadResponse.url;
     } catch (error) {
-      console.error("Image upload failed:", error);
       throw new Error("Failed to upload product image");
     }
   }
 
+  const parseBoolean = (value) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      return value.toLowerCase() === 'true' || value === '1';
+    }
+    return Boolean(value);
+  };
+
   // Update product and variant in transaction
   const result = await prisma.$transaction(async (tx) => {
-    const product = await tx.product.update({
-      where: { id: productId },
-      data: {
-        ...(name && { name: name.trim() }),
-        ...(code !== undefined && { code }),
-        ...(brand !== undefined && { brand }),
-        ...(imageUrl !== existingProduct.image && { image: imageUrl }),
-        ...(categoryId !== undefined && { categoryId }),
-        ...(active !== undefined && { active: active === 'true' || active === true }),
-        ...(isFavorite !== undefined && { isFavorite: isFavorite === 'true' || isFavorite === true }),
-      },
-      include: {
-        category: true,
-        variants: {
-          include: {
-            unit: true,
+    const productUpdateData = {};
+    
+    if (name !== undefined) productUpdateData.name = name.trim();
+    if (code !== undefined) productUpdateData.code = code;
+    if (brand !== undefined) productUpdateData.brand = brand;
+    if (file) productUpdateData.image = imageUrl;
+    if (categoryId !== undefined) productUpdateData.categoryId = categoryId;
+    if (isActive !== undefined) productUpdateData.isActive = parseBoolean(isActive);
+    if (isFavorite !== undefined) productUpdateData.isFavorite = parseBoolean(isFavorite);
+    let product = existingProduct;
+    if (Object.keys(productUpdateData).length > 0) {
+      product = await tx.product.update({
+        where: { id: productId },
+        data: productUpdateData,
+        include: {
+          category: true,
+          variants: {
+            include: {
+              unit: true,
+            },
           },
         },
-      },
-    });
+      });
+    }
 
-    if (existingProduct.variants.length > 0) {
-      const variantData = {};
-      
-      if (unitId) variantData.unitId = unitId;
-      if (quantity !== undefined) variantData.quantity = parseInt(quantity);
-      if (capitalPrice !== undefined) variantData.capitalPrice = parseFloat(capitalPrice);
-      if (price !== undefined) variantData.price = parseFloat(price);
-      if (discountPercent !== undefined) variantData.discountPercent = parseFloat(discountPercent);
-      if (discountRp !== undefined) variantData.discountRp = parseFloat(discountRp);
-      if (imageUrl !== existingProduct.image) variantData.image = imageUrl;
-
-      if (Object.keys(variantData).length > 0) {
-        await tx.productVariant.update({
-          where: { id: existingProduct.variants[0].id },
-          data: variantData,
-        });
-      }
+    const variantUpdateData = {};
+    
+    if (unitId !== undefined) variantUpdateData.unitId = unitId;
+    if (quantity !== undefined) variantUpdateData.quantity = parseInt(quantity);
+    if (capitalPrice !== undefined) variantUpdateData.capitalPrice = parseFloat(capitalPrice);
+    if (price !== undefined) variantUpdateData.price = parseFloat(price);
+    if (discountPercent !== undefined) variantUpdateData.discountPercent = parseFloat(discountPercent);
+    if (discountRp !== undefined) variantUpdateData.discountRp = parseFloat(discountRp);
+    if (file) variantUpdateData.image = imageUrl;
+    if (Object.keys(variantUpdateData).length > 0 && existingProduct.variants.length > 0) {
+      await tx.productVariant.update({
+        where: { id: existingProduct.variants[0].id },
+        data: variantUpdateData,
+      });
     }
 
     return await tx.product.findUnique({
@@ -464,13 +472,12 @@ export const toggleFavoriteProduct = async (productId, userId) => {
   return updatedProduct;
 };
 
-// Delete product (soft delete)
 export const deleteProduct = async (productId, userId) => {
   const product = await getProductById(productId, userId);
 
   await prisma.product.update({
     where: { id: productId },
-    data: { active: false },
+    data: { isActive: false },
   });
 
   return { 

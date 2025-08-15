@@ -1,66 +1,77 @@
 import prisma from "../config/prisma.js";
+import { canCreateStore } from "./subscriptionService.js";
 
-// Create new store
-export const createStore = async (storeData, user) => {
-  const { name, storeType, address, whatsapp, logo, stamp } = storeData;
+// Create first store dengan pengecekan subscription
+export const createFirstStore = async (storeData) => {
+  const { userId } = storeData;
 
-  // Check if store name already exists for this user
-  const existingStore = await prisma.store.findFirst({
-    where: {
-      name,
-      userId: user.id,
-    },
+  const existingStores = await prisma.store.count({
+    where: { userId, isActive: true },
   });
 
-  if (existingStore) {
-    throw new Error("Store with this name already exists");
+  if (existingStores > 0) {
+    throw new Error("You already have stores. Use the regular create store endpoint.");
+  }
+  const canCreate = await canCreateStore(userId);
+  if (!canCreate.canCreate) {
+    throw new Error(canCreate.reason);
   }
 
-  // Create store
   const store = await prisma.store.create({
     data: {
-      name: name.trim(),
-      storeType: storeType?.trim() || null,
-      address: address?.trim() || null,
-      whatsapp: whatsapp?.trim() || null,
-      logo: logo?.trim() || null,
-      stamp: stamp?.trim() || null,
-      userId: user.id,
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+      ...storeData,
+      storeType: "RETAIL",
+      isActive: true,
     },
   });
 
   return store;
 };
 
-// Get all stores for a user
-export const getUserStores = async (user) => {
+// Create additional store
+export const createStore = async (storeData) => {
+  const { userId } = storeData;
+  const canCreate = await canCreateStore(userId);
+  if (!canCreate.canCreate) {
+    throw new Error(canCreate.reason);
+  }
+
+  const store = await prisma.store.create({
+    data: {
+      ...storeData,
+      storeType: "RETAIL", // default
+      isActive: true,
+    },
+  });
+
+  return store;
+};
+
+// Get user's stores
+export const getUserStores = async (userId) => {
   const stores = await prisma.store.findMany({
     where: {
-      userId: user.id,
+      userId,
+      isActive: true,
     },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      address: true,
+      phone: true,
+      whatsapp: true,
+      email: true,
+      logo: true,
+      stamp: true,
+      storeType: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
       _count: {
         select: {
-          categories: true,
           products: true,
-          customers: true,
-          orders: true,
+          categories: true,
           members: true,
         },
       },
@@ -74,43 +85,22 @@ export const getUserStores = async (user) => {
 };
 
 // Get store by ID
-export const getStoreById = async (storeId, user) => {
-  // For admin, can access any store
-  if (user.role === "ADMIN") {
-    const store = await prisma.store.findUnique({
-      where: { id: storeId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        _count: {
-          select: {
-            categories: true,
-            products: true,
-            customers: true,
-            orders: true,
-            members: true,
-          },
-        },
-      },
-    });
-
-    if (!store) {
-      throw new Error("Store not found");
-    }
-
-    return store;
-  }
-
-  // For regular users, only access their own stores
+export const getStoreById = async (storeId, userId) => {
   const store = await prisma.store.findFirst({
     where: {
       id: storeId,
-      userId: user.id,
+      OR: [
+        { userId }, // Owner
+        {
+          members: {
+            some: {
+              userId,
+              isActive: true,
+            },
+          },
+        }, // Member
+      ],
+      isActive: true,
     },
     include: {
       user: {
@@ -122,10 +112,8 @@ export const getStoreById = async (storeId, user) => {
       },
       _count: {
         select: {
-          categories: true,
           products: true,
-          customers: true,
-          orders: true,
+          categories: true,
           members: true,
         },
       },
@@ -133,122 +121,81 @@ export const getStoreById = async (storeId, user) => {
   });
 
   if (!store) {
-    throw new Error(
-      "Store not found or you don't have permission to access it"
-    );
+    throw new Error("Store not found or you don't have access to this store");
   }
 
   return store;
 };
 
 // Update store
-export const updateStore = async (storeId, updateData, user) => {
-  const { name, storeType, address, whatsapp, logo, stamp } = updateData;
-
-  // Verify store ownership (admin can update any store)
+export const updateStore = async (storeId, userId, updateData) => {
   const existingStore = await prisma.store.findFirst({
     where: {
       id: storeId,
-      ...(user.role !== "ADMIN" && { userId: user.id }),
+      userId,
+      isActive: true,
     },
   });
 
   if (!existingStore) {
-    throw new Error(
-      "Store not found or you don't have permission to access it"
-    );
+    throw new Error("Store not found or you don't have permission to update this store");
   }
 
-  // Check if new store name conflicts with existing stores for this user
-  if (name && name.trim() !== existingStore.name) {
-    const nameConflict = await prisma.store.findFirst({
-      where: {
-        name: name.trim(),
-        userId: existingStore.userId,
-        id: { not: storeId },
-      },
-    });
-
-    if (nameConflict) {
-      throw new Error("Store with this name already exists");
-    }
-  }
-
-  // Update store
   const updatedStore = await prisma.store.update({
-    where: { id: storeId },
-    data: {
-      ...(name && { name: name.trim() }),
-      ...(storeType !== undefined && { storeType: storeType?.trim() || null }),
-      ...(address !== undefined && { address: address?.trim() || null }),
-      ...(whatsapp !== undefined && { whatsapp: whatsapp?.trim() || null }),
-      ...(logo !== undefined && { logo: logo?.trim() || null }),
-      ...(stamp !== undefined && { stamp: stamp?.trim() || null }),
+    where: {
+      id: storeId,
     },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-      _count: {
-        select: {
-          categories: true,
-          products: true,
-          customers: true,
-          orders: true,
-          members: true,
-        },
-      },
+    data: {
+      ...updateData,
+      updatedAt: new Date(),
     },
   });
 
   return updatedStore;
 };
 
-// Delete store
-export const deleteStore = async (storeId, user) => {
-  // Verify store ownership (admin can delete any store)
-  const store = await prisma.store.findFirst({
+// Delete store (soft delete)
+export const deleteStore = async (storeId, userId) => {
+  const existingStore = await prisma.store.findFirst({
     where: {
       id: storeId,
-      ...(user.role !== "ADMIN" && { userId: user.id }),
+      userId,
+      isActive: true,
     },
   });
 
-  if (!store) {
-    throw new Error(
-      "Store not found or you don't have permission to access it"
-    );
+  if (!existingStore) {
+    throw new Error("Store not found or you don't have permission to delete this store");
   }
 
-  // Delete store (cascade delete will handle related records)
-  await prisma.store.delete({
-    where: { id: storeId },
+  const deletedStore = await prisma.store.update({
+    where: {
+      id: storeId,
+    },
+    data: {
+      isActive: false,
+      updatedAt: new Date(),
+    },
   });
 
-  return { message: "Store deleted successfully" };
+  return { message: "Store deleted successfully", store: deletedStore };
 };
 
-// Get all stores (admin only)
+// Admin: Get all stores with pagination
 export const getAllStores = async (page = 1, limit = 10, search = "") => {
   const skip = (page - 1) * limit;
-
+  
   const where = search
     ? {
         OR: [
           { name: { contains: search, mode: "insensitive" } },
-          { storeType: { contains: search, mode: "insensitive" } },
-          { address: { contains: search, mode: "insensitive" } },
+          { description: { contains: search, mode: "insensitive" } },
           { user: { name: { contains: search, mode: "insensitive" } } },
-          { user: { email: { contains: search, mode: "insensitive" } } },
         ],
       }
     : {};
 
-  const [stores, total] = await Promise.all([
+  const [stores, totalStores] = await Promise.all([
     prisma.store.findMany({
       where,
       include: {
@@ -261,19 +208,17 @@ export const getAllStores = async (page = 1, limit = 10, search = "") => {
         },
         _count: {
           select: {
-            categories: true,
             products: true,
-            customers: true,
-            orders: true,
+            categories: true,
             members: true,
           },
         },
       },
+      skip,
+      take: limit,
       orderBy: {
         createdAt: "desc",
       },
-      skip,
-      take: limit,
     }),
     prisma.store.count({ where }),
   ]);
@@ -282,9 +227,9 @@ export const getAllStores = async (page = 1, limit = 10, search = "") => {
     stores,
     pagination: {
       currentPage: page,
-      totalPages: Math.ceil(total / limit),
-      totalItems: total,
-      itemsPerPage: limit,
+      totalPages: Math.ceil(totalStores / limit),
+      totalStores,
+      limit,
     },
   };
 };

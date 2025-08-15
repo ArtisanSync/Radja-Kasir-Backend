@@ -5,7 +5,10 @@ import {
   sendResetPasswordEmail,
   sendVerificationEmail,
 } from "../libs/nodemailer.js";
-import imagekit from "../config/imagekit.js";
+import {
+  uploadPhotoToStorage,
+  deleteFileFromStorage,
+} from "../config/storage.js";
 import { BCRYPT_ROUNDS, TOKEN_CONFIG } from "../config/auth.js";
 
 // Register new user
@@ -23,15 +26,20 @@ export const registerUser = async (userData) => {
   const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const verificationToken = generateRandomToken();
 
-  // Create user
   const user = await prisma.user.create({
     data: {
-      name,
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
       rememberToken: verificationToken,
     },
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
+    select: { 
+      id: true, 
+      name: true, 
+      email: true, 
+      role: true, 
+      createdAt: true 
+    },
   });
 
   // Send verification email
@@ -43,46 +51,15 @@ export const registerUser = async (userData) => {
 
   return {
     user,
-    message:
-      "Registration successful. Please check your email to verify your account.",
+    message: "Registration successful. Please check your email to verify your account.",
   };
 };
 
-// Resend verification token
-export const resendVerificationToken = async (email) => {
-  const user = await prisma.user.findUnique({
-    where: { email, emailVerifiedAt: null },
-  });
-
-  if (!user) {
-    throw new Error("User not found or email is already verified");
-  }
-
-  const verificationToken = generateRandomToken();
-
-  // Update token
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { rememberToken: verificationToken },
-  });
-
-  const emailSent = await sendVerificationEmail(
-    email,
-    verificationToken,
-    user.name
-  );
-  if (!emailSent) {
-    throw new Error("Failed to send verification email. Please try again.");
-  }
-
-  return true;
-};
-
-// Verify email with email and token
+// Verify email
 export const verifyEmail = async (email, token) => {
   const user = await prisma.user.findFirst({
     where: {
-      email,
+      email: email.toLowerCase().trim(),
       rememberToken: token,
       emailVerifiedAt: null,
     },
@@ -108,6 +85,7 @@ export const verifyEmail = async (email, token) => {
     data: {
       emailVerifiedAt: new Date(),
       rememberToken: null,
+      isActive: true,
     },
     select: {
       id: true,
@@ -126,11 +104,41 @@ export const verifyEmail = async (email, token) => {
 
 // Login user
 export const loginUser = async (email, password) => {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ 
+    where: { email: email.toLowerCase().trim() },
+    include: {
+      stores: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          storeType: true,
+          logo: true,
+        },
+        take: 1,
+      },
+      subscriptions: {
+        where: {
+          status: { in: ["ACTIVE", "TRIAL"] },
+          endDate: { gte: new Date() },
+        },
+        include: {
+          package: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
+  });
+
   if (!user) {
     throw new Error(
       "Invalid email or password. Please check your credentials."
     );
+  }
+
+  if (!user.isActive) {
+    throw new Error("Account is deactivated. Please contact support.");
   }
 
   // Check email verified
@@ -145,35 +153,83 @@ export const loginUser = async (email, password) => {
     );
   }
 
-  const token = generateToken({ userId: user.id, email: user.email });
-  const { password: _, ...userWithoutPassword } = user;
+  // Update last login
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
 
-  return { user: userWithoutPassword, token };
+  const token = generateToken({ userId: user.id, email: user.email });
+  const { password: _, rememberToken: __, ...userWithoutPassword } = user;
+
+  const hasStore = user.stores.length > 0;
+  const hasActiveSubscription = user.subscriptions.length > 0;
+
+  const userResponse = {
+    ...userWithoutPassword,
+    hasStore,
+    isSubscribed: hasActiveSubscription,
+    currentSubscription: hasActiveSubscription ? user.subscriptions[0] : null,
+    firstStore: hasStore ? user.stores[0] : null,
+  };
+
+  return { user: userResponse, token };
 };
 
 // Update user profile
 export const updateUser = async (userId, updateData, file) => {
-  let avatarUrl = null;
+  const existingUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      avatar: true,
+    },
+  });
 
-  // Upload avatar if provided
-  if (file) {
-    const uploadResponse = await imagekit.upload({
-      file: file.buffer,
-      fileName: `avatar_${userId}_${Date.now()}`,
-      folder: "/users/avatars",
-      useUniqueFileName: true,
-      transformation: { pre: "w-300,h-300,c-maintain_ratio" },
-    });
-    avatarUrl = uploadResponse.url;
+  if (!existingUser) {
+    throw new Error("User not found");
   }
 
-  const updatePayload = { ...updateData };
-  if (avatarUrl) updatePayload.avatar = avatarUrl;
+  let avatarUrl = existingUser.avatar;
+
+  if (file) {
+    try {
+      const newAvatarUrl = await uploadPhotoToStorage(
+        `data:${file.mimetype};base64,${file.buffer.toString('base64')}`,
+        userId,
+        userId,
+        userId,
+        "avatar"
+      );
+
+      if (newAvatarUrl && existingUser.avatar) {
+        try {
+          await deleteFileFromStorage(existingUser.avatar);
+        } catch (deleteError) {
+        }
+      }
+
+      avatarUrl = newAvatarUrl;
+    } catch (error) {
+      throw new Error("Failed to upload avatar");
+    }
+  }
+
+  const updatePayload = {};
+  
+  // Handle fields
+  if (updateData.name) updatePayload.name = updateData.name.trim();
+  if (updateData.phone) updatePayload.phone = updateData.phone.trim();
+  if (updateData.businessName !== undefined) updatePayload.businessName = updateData.businessName?.trim() || null;
+  if (updateData.businessType !== undefined) updatePayload.businessType = updateData.businessType?.trim() || null;
+  if (updateData.businessAddress !== undefined) updatePayload.businessAddress = updateData.businessAddress?.trim() || null;
+  if (updateData.whatsapp !== undefined) updatePayload.whatsapp = updateData.whatsapp?.trim() || null;
+
+  if (avatarUrl !== existingUser.avatar) updatePayload.avatar = avatarUrl;
+
+  // Handle password update
   if (updateData.password) {
-    updatePayload.password = await bcrypt.hash(
-      updateData.password,
-      BCRYPT_ROUNDS
-    );
+    updatePayload.password = await bcrypt.hash(updateData.password, BCRYPT_ROUNDS);
   }
 
   const user = await prisma.user.update({
@@ -185,6 +241,11 @@ export const updateUser = async (userId, updateData, file) => {
       email: true,
       avatar: true,
       role: true,
+      phone: true,
+      businessName: true,
+      businessType: true,
+      businessAddress: true,
+      whatsapp: true,
       updatedAt: true,
     },
   });
@@ -192,9 +253,123 @@ export const updateUser = async (userId, updateData, file) => {
   return user;
 };
 
-// Request password reset
+// Get user profile
+export const getUserProfile = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      avatar: true,
+      role: true,
+      phone: true,
+      businessName: true,
+      businessType: true,
+      businessAddress: true,
+      whatsapp: true,
+      isActive: true,
+      emailVerifiedAt: true,
+      lastLoginAt: true,
+      createdAt: true,
+      updatedAt: true,
+      stores: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          storeType: true,
+          address: true,
+          logo: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      },
+      storeMembers: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          role: true,
+          joinedAt: true,
+          store: {
+            select: {
+              id: true,
+              name: true,
+              storeType: true,
+              logo: true,
+            },
+          },
+        },
+        orderBy: { joinedAt: "desc" },
+      },
+      subscriptions: {
+        where: {
+          status: { in: ["ACTIVE", "TRIAL"] },
+          endDate: { gte: new Date() },
+        },
+        select: {
+          id: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          isTrial: true,
+          trialEndDate: true,
+          isNewUserPromo: true,
+          paidMonths: true,
+          bonusMonths: true,
+          totalMonths: true,
+          package: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  if (!user) {
+    throw new Error("User profile not found");
+  }
+
+  const hasStore = user.stores.length > 0;
+  const hasActiveSubscription = user.subscriptions.length > 0;
+  const response = {
+    ...user,
+    hasStore,
+    isSubscribed: hasActiveSubscription,
+    currentSubscription: hasActiveSubscription ? user.subscriptions[0] : null,
+  };
+
+  return response;
+};
+
+export const resendVerificationToken = async (email) => {
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase().trim(), emailVerifiedAt: null },
+  });
+
+  if (!user) {
+    throw new Error("User not found or email is already verified");
+  }
+
+  const verificationToken = generateRandomToken();
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { rememberToken: verificationToken },
+  });
+
+  const emailSent = await sendVerificationEmail(email, verificationToken, user.name);
+  if (!emailSent) {
+    throw new Error("Failed to send verification email. Please try again.");
+  }
+
+  return true;
+};
+
 export const requestPasswordReset = async (email) => {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ 
+    where: { email: email.toLowerCase().trim() } 
+  });
   if (!user) {
     throw new Error("No account found with this email address");
   }
@@ -206,11 +381,7 @@ export const requestPasswordReset = async (email) => {
     data: { rememberToken: resetToken },
   });
 
-  const emailSent = await sendResetPasswordEmail(
-    user.email,
-    resetToken,
-    user.name
-  );
+  const emailSent = await sendResetPasswordEmail(user.email, resetToken, user.name);
   if (!emailSent) {
     throw new Error("Failed to send password reset email. Please try again.");
   }
@@ -218,9 +389,10 @@ export const requestPasswordReset = async (email) => {
   return true;
 };
 
-// Resend reset password token
 export const resendResetToken = async (email) => {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ 
+    where: { email: email.toLowerCase().trim() } 
+  });
   if (!user) {
     throw new Error("No account found with this email address");
   }
@@ -232,11 +404,7 @@ export const resendResetToken = async (email) => {
     data: { rememberToken: resetToken },
   });
 
-  const emailSent = await sendResetPasswordEmail(
-    user.email,
-    resetToken,
-    user.name
-  );
+  const emailSent = await sendResetPasswordEmail(user.email, resetToken, user.name);
   if (!emailSent) {
     throw new Error("Failed to send password reset email. Please try again.");
   }
@@ -244,11 +412,10 @@ export const resendResetToken = async (email) => {
   return true;
 };
 
-// Reset password with email and token
 export const resetPassword = async (email, token, newPassword) => {
   const user = await prisma.user.findFirst({
     where: {
-      email,
+      email: email.toLowerCase().trim(),
       rememberToken: token,
     },
   });
@@ -280,7 +447,6 @@ export const resetPassword = async (email, token, newPassword) => {
   return true;
 };
 
-// Delete user - Admin only
 export const deleteUser = async (userId, currentUser) => {
   if (currentUser.role !== "ADMIN") {
     throw new Error("Only administrators can delete users");
@@ -288,23 +454,34 @@ export const deleteUser = async (userId, currentUser) => {
 
   const targetUser = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, name: true },
+    select: { 
+      id: true, 
+      role: true, 
+      name: true, 
+      avatar: true
+    },
   });
 
   if (!targetUser) {
     throw new Error("User not found");
   }
 
-  // Prevent self-deletion
   if (currentUser.id === userId) {
     throw new Error("You cannot delete your own account");
+  }
+
+  if (targetUser.avatar) {
+    try {
+      await deleteFileFromStorage(targetUser.avatar);
+    } catch (error) {
+
+    }
   }
 
   await prisma.user.delete({ where: { id: userId } });
   return { deletedUser: targetUser.name };
 };
 
-// Get all users (admin only)
 export const getAllUsers = async (currentUser) => {
   if (currentUser.role !== "ADMIN") {
     throw new Error("Only administrators can view all users");
@@ -317,68 +494,15 @@ export const getAllUsers = async (currentUser) => {
       email: true,
       avatar: true,
       role: true,
+      businessName: true,
+      businessType: true,
+      isActive: true,
       emailVerifiedAt: true,
+      lastLoginAt: true,
       createdAt: true,
     },
     orderBy: { createdAt: "desc" },
   });
 
   return users;
-};
-
-// Get user profile
-export const getUserProfile = async (userId) => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      avatar: true,
-      role: true,
-      isMember: true,
-      isSubscribe: true,
-      emailVerifiedAt: true,
-      createdAt: true,
-      updatedAt: true,
-      stores: {
-        select: {
-          id: true,
-          name: true,
-          storeType: true,
-          address: true,
-          logo: true,
-          createdAt: true,
-        },
-      },
-      storeMembers: {
-        select: {
-          id: true,
-          store: {
-            select: {
-              id: true,
-              name: true,
-              storeType: true,
-              logo: true,
-            },
-          },
-          createdAt: true,
-        },
-      },
-      subscribes: {
-        select: {
-          id: true,
-          packageId: true,
-          endDate: true,
-          createdAt: true,
-        },
-      },
-    },
-  });
-
-  if (!user) {
-    throw new Error("User profile not found");
-  }
-
-  return user;
 };

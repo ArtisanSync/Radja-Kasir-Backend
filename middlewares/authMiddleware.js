@@ -21,12 +21,19 @@ export const authenticateToken = async (req, res, next) => {
         role: true,
         name: true,
         avatar: true,
-        isSubscribe: true,
+        isActive: true,
+        businessName: true,
+        businessType: true,
+        businessAddress: true,
       },
     });
 
     if (!user) {
       return errorResponse(res, "User not found", 404);
+    }
+
+    if (!user.isActive) {
+      return errorResponse(res, "Account is deactivated", 403);
     }
 
     req.user = user;

@@ -9,19 +9,21 @@ import {
   getUnits,
 } from "../controllers/productController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
+import { requireSubscription } from "../middlewares/subscriptionMiddleware.js";
 import { uploadSingle } from "../middlewares/multer.js";
 
 const router = express.Router();
 
-// Get units (for dropdown)
-router.get("/units", authenticateToken, getUnits);
+// Authentication required for all routes
+router.use(authenticateToken);
 
-// Product routes
-router.post("/", authenticateToken, uploadSingle("image"), createNewProduct);
-router.get("/store/:storeId", authenticateToken, getProducts);
-router.get("/:productId", authenticateToken, getProduct);
-router.put("/:productId", authenticateToken, uploadSingle("image"), updateExistingProduct);
-router.patch("/:productId/favorite", authenticateToken, toggleFavorite);
-router.delete("/:productId", authenticateToken, removeProduct);
+router.get("/units", getUnits);
+
+router.post("/", requireSubscription, uploadSingle("image"), createNewProduct);
+router.get("/store/:storeId", requireSubscription, getProducts);
+router.get("/:productId", requireSubscription, getProduct);
+router.put("/:productId", requireSubscription, uploadSingle("image"), updateExistingProduct);
+router.patch("/:productId/favorite", requireSubscription, toggleFavorite);
+router.delete("/:productId", requireSubscription, removeProduct);
 
 export default router;

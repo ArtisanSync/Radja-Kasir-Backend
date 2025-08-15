@@ -1,0 +1,185 @@
+<!-- templates/invitation-email.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Undangan Member Toko - Radja Kasir</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        background-color: #f5f7fa;
+        margin: 0;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .email-wrapper {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      }
+      .header {
+        background: linear-gradient(135deg, #1eb5e6 0%, #1e88e5 100%);
+        color: white;
+        text-align: center;
+        padding: 40px 30px;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 600;
+      }
+      .content {
+        padding: 40px 30px;
+      }
+      .greeting {
+        color: #2c3e50;
+        font-size: 18px;
+        margin-bottom: 20px;
+        font-weight: 600;
+      }
+      .message {
+        color: #5a6c7d;
+        font-size: 16px;
+        margin-bottom: 30px;
+        line-height: 1.7;
+      }
+      .credentials-container {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 30px;
+        margin: 30px 0;
+        border: 2px solid #e9ecef;
+      }
+      .credentials-title {
+        color: #2c3e50;
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+      .credential-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 15px 0;
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+      }
+      .credential-label {
+        color: #6c757d;
+        font-size: 14px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .credential-value {
+        color: #1e88e5;
+        font-size: 16px;
+        font-weight: bold;
+        font-family: 'Courier New', monospace;
+      }
+      .store-info {
+        background: #e3f2fd;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+        color: #1565c0;
+      }
+      .warning {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 25px 0;
+        color: #721c24;
+        font-size: 14px;
+      }
+      .footer {
+        background: #f8f9fa;
+        text-align: center;
+        padding: 25px 30px;
+        border-top: 1px solid #e9ecef;
+      }
+      .footer p {
+        margin: 0;
+        color: #9ca3af;
+        font-size: 13px;
+      }
+      .brand {
+        color: #1e88e5;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-wrapper">
+      <div class="header">
+        <h1>🎉 Undangan Member Toko</h1>
+      </div>
+      
+      <div class="content">
+        <div class="greeting">
+          Halo {{memberName}}!
+        </div>
+        
+        <div class="message">
+          <strong>{{inviterName}}</strong> telah mengundang Anda untuk bergabung sebagai member di <strong>{{storeName}}</strong> menggunakan aplikasi Radja Kasir.
+        </div>
+
+        <div class="store-info">
+          <strong>🏪 Nama Toko:</strong> {{storeName}}<br>
+          <strong>👤 Diundang oleh:</strong> {{inviterName}}<br>
+          <strong>🎭 Posisi:</strong> {{memberRole}}
+        </div>
+
+        <div class="message">
+          Berikut adalah kredensial login Anda untuk mengakses aplikasi:
+        </div>
+
+        <div class="credentials-container">
+          <div class="credentials-title">📱 Kredensial Login</div>
+          
+          <div class="credential-row">
+            <div class="credential-label">Email:</div>
+            <div class="credential-value">{{memberEmail}}</div>
+          </div>
+          
+          <div class="credential-row">
+            <div class="credential-label">Password:</div>
+            <div class="credential-value">{{memberPassword}}</div>
+          </div>
+        </div>
+
+        <div class="warning">
+          <strong>⚠️ Penting:</strong> 
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>Simpan email dan password ini dengan aman</li>
+            <li>Undangan ini akan kedaluwarsa dalam 7 hari</li>
+            <li>Gunakan kredensial ini untuk login ke aplikasi Radja Kasir</li>
+            <li>Jangan bagikan kredensial ini kepada orang lain</li>
+          </ul>
+        </div>
+        
+        <div class="message">
+          Jika Anda memiliki pertanyaan, silakan hubungi <strong>{{inviterName}}</strong> atau tim support Radja Kasir.
+        </div>
+
+        <div class="message">
+          Selamat bergabung! 🚀
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>© 2025 <span class="brand">Radja Kasir</span>. All rights reserved.</p>
+        <p style="margin-top: 5px; font-size: 12px;">
+          Email ini dikirim secara otomatis, mohon tidak membalas email ini.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
