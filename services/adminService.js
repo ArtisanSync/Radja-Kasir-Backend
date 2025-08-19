@@ -4,6 +4,7 @@ import prisma from "../config/prisma.js";
 export const getActiveSubscribers = async () => {
   const activeSubscribers = await prisma.user.findMany({
     where: {
+      role: "USER",
       subscriptions: {
         some: {
           status: { in: ["ACTIVE", "TRIAL"] },
