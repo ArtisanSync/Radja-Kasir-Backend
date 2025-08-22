@@ -6,8 +6,6 @@ export const requireSubscription = async (req, res, next) => {
   if (!req.user) {
     return errorResponse(res, "User not authenticated", 401);
   }
-
-  // Admin bypass subscription check
   if (req.user.role === "ADMIN") {
     return next();
   }
@@ -36,7 +34,6 @@ export const requireSubscription = async (req, res, next) => {
   }
 };
 
-// Check if user is admin or has subscription
 export const requireAdminOrSubscription = async (req, res, next) => {
   if (!req.user) {
     return errorResponse(res, "User not authenticated", 401);
