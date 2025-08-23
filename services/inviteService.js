@@ -147,12 +147,18 @@ export const acceptMemberInvitation = async (email, password, invitedName) => {
           password: invitation.tempPassword,
           emailVerifiedAt: new Date(),
           isActive: true,
+          role: "MEMBER",
         },
       });
     } else if (user.role === "USER") {
       await tx.user.update({
         where: { id: user.id },
-        data: { role: "MEMBER" },
+        data: { role: "MEMBER" }
+      });
+    }
+    if (!user || user.role === "USER") {
+      user = await tx.user.findUnique({
+        where: { email: email.toLowerCase().trim() },
       });
     }
 
