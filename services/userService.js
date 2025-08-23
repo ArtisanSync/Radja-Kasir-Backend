@@ -15,7 +15,6 @@ import { BCRYPT_ROUNDS, TOKEN_CONFIG } from "../config/auth.js";
 export const registerUser = async (userData) => {
   const { name, email, password } = userData;
 
-  // Check existing user
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw new Error(
@@ -128,6 +127,21 @@ export const loginUser = async (email, password) => {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      storeMembers: {
+        where: { isActive: true },
+        include: {
+          store: {
+            select: {
+              id: true,
+              name: true,
+              storeType: true,
+              logo: true,
+              userId: true,
+            },
+          },
+        },
+        orderBy: { joinedAt: "desc" },
+      },
     },
   });
 
@@ -141,7 +155,6 @@ export const loginUser = async (email, password) => {
     throw new Error("Account is deactivated. Please contact support.");
   }
 
-  // Check email verified
   if (!user.emailVerifiedAt) {
     throw new Error("Please verify your email address before logging in");
   }
@@ -162,15 +175,52 @@ export const loginUser = async (email, password) => {
   const token = generateToken({ userId: user.id, email: user.email });
   const { password: _, rememberToken: __, ...userWithoutPassword } = user;
 
+  let userType = user.role;
+  let accessType = "USER_NEEDS_SUBSCRIPTION";
+  let firstStore = user.stores.length > 0 ? user.stores[0] : null;
+  let currentSubscription = user.subscriptions.length > 0 ? user.subscriptions[0] : null;
+
+  if (user.role === "MEMBER" && user.storeMembers.length > 0) {
+    firstStore = user.storeMembers[0].store;
+    const ownerId = firstStore.userId;
+    const ownerSubscription = await prisma.subscribe.findFirst({
+      where: {
+        userId: ownerId,
+        status: { in: ["ACTIVE", "TRIAL"] },
+        endDate: { gte: new Date() },
+      },
+      include: { package: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (ownerSubscription) {
+      accessType = "MEMBER_WITH_SUBSCRIPTION";
+      currentSubscription = ownerSubscription;
+    } else {
+      accessType = "MEMBER_NEEDS_SUBSCRIPTION";
+      currentSubscription = null;
+    }
+  } else if (user.role === "ADMIN") {
+    accessType = "ADMIN_ACCESS";
+  } else if (user.role === "USER") {
+    if (user.subscriptions.length > 0) {
+      accessType = "USER_WITH_SUBSCRIPTION";
+      currentSubscription = user.subscriptions[0];
+    }
+  }
+
   const hasStore = user.stores.length > 0;
-  const hasActiveSubscription = user.subscriptions.length > 0;
+  const hasActiveSubscription = !!currentSubscription;
 
   const userResponse = {
     ...userWithoutPassword,
     hasStore,
     isSubscribed: hasActiveSubscription,
-    currentSubscription: hasActiveSubscription ? user.subscriptions[0] : null,
-    firstStore: hasStore ? user.stores[0] : null,
+    currentSubscription,
+    firstStore,
+    userType,
+    accessType,
+    storeMembers: user.storeMembers,
   };
 
   return { user: userResponse, token };
