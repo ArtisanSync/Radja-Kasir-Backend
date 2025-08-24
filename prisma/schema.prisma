@@ -64,7 +64,6 @@ model SubscriptionPackage {
   maxUsers    Int      @default(1)
   maxMembers  Int      @default(3)
   maxStores   Int      @default(1)
-  features    Json?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

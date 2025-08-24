@@ -243,8 +243,7 @@ export const checkSubscriptionStatus = async (userId) => {
     hasAccess: true,
     accessDetails: {
       maxStores: subscription.package.maxStores,
-      maxMembers: subscription.package.maxMembers,
-      features: subscription.package.features
+      maxMembers: subscription.package.maxMembers
     }
   };
 };
