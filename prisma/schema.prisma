@@ -58,8 +58,9 @@ enum PaymentMethod {
 
 model SubscriptionPackage {
   id          String   @id @default(cuid())
-  name        String   @unique
-  displayName String 
+  name        String   
+  displayName String   
+  duration    Int      @default(1)
   price       Decimal  @default(0.00)
   maxUsers    Int      @default(1)
   maxMembers  Int      @default(3)
@@ -70,6 +71,8 @@ model SubscriptionPackage {
 
   subscriptions Subscribe[]
 
+  @@unique([name, duration])
+  @@index([duration])
   @@map("subscription_packages")
 }
 
