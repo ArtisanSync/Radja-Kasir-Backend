@@ -1,5 +1,128 @@
 import prisma from "../config/prisma.js";
 
+// Mendapatkan semua paket subscription
+export const getAllSubscriptionPackages = async () => {
+  const packages = await prisma.subscriptionPackage.findMany({
+    where: { isActive: true },
+    orderBy: [
+      { name: "asc" },
+      { duration: "asc" }
+    ],
+  });
+
+  return packages;
+};
+
+// Membuat paket subscription baru
+export const createSubscriptionPackage = async (packageData) => {
+  const { name, displayName, duration, price, maxUsers, maxMembers, maxStores } = packageData;
+
+  if (!name || !displayName || !duration || !price) {
+    throw new Error("Nama, displayName, durasi, dan harga paket diperlukan");
+  }
+  const existingPackage = await prisma.subscriptionPackage.findFirst({
+    where: {
+      name,
+      duration: parseInt(duration),
+    },
+  });
+
+  if (existingPackage) {
+    throw new Error(`Paket ${name} dengan durasi ${duration} bulan sudah ada`);
+  }
+  const newPackage = await prisma.subscriptionPackage.create({
+    data: {
+      name: name.toUpperCase(),
+      displayName,
+      duration: parseInt(duration),
+      price: parseFloat(price),
+      maxUsers: parseInt(maxUsers || 1),
+      maxMembers: parseInt(maxMembers || 3),
+      maxStores: parseInt(maxStores || 1),
+      isActive: true,
+    },
+  });
+
+  return newPackage;
+};
+
+// Memperbarui paket subscription
+export const updateSubscriptionPackage = async (packageId, packageData) => {
+  const { displayName, price, maxUsers, maxMembers, maxStores, isActive } = packageData;
+
+  if (!packageId) {
+    throw new Error("ID paket diperlukan");
+  }
+
+  const existingPackage = await prisma.subscriptionPackage.findUnique({
+    where: { id: packageId },
+  });
+
+  if (!existingPackage) {
+    throw new Error("Paket tidak ditemukan");
+  }
+
+  // Update paket
+  const updatedPackage = await prisma.subscriptionPackage.update({
+    where: { id: packageId },
+    data: {
+      displayName: displayName || existingPackage.displayName,
+      price: price !== undefined ? parseFloat(price) : existingPackage.price,
+      maxUsers: maxUsers !== undefined ? parseInt(maxUsers) : existingPackage.maxUsers,
+      maxMembers: maxMembers !== undefined ? parseInt(maxMembers) : existingPackage.maxMembers,
+      maxStores: maxStores !== undefined ? parseInt(maxStores) : existingPackage.maxStores,
+      isActive: isActive !== undefined ? isActive : existingPackage.isActive,
+    },
+  });
+
+  return updatedPackage;
+};
+
+// Menghapus paket subscription (soft delete)
+export const deleteSubscriptionPackage = async (packageId) => {
+  // Validasi input
+  if (!packageId) {
+    throw new Error("ID paket diperlukan");
+  }
+
+  // Cek apakah paket ada
+  const existingPackage = await prisma.subscriptionPackage.findUnique({
+    where: { id: packageId },
+  });
+
+  if (!existingPackage) {
+    throw new Error("Paket tidak ditemukan");
+  }
+  const activeSubscriptions = await prisma.subscribe.count({
+    where: {
+      packageId,
+      status: { in: ["ACTIVE", "TRIAL"] },
+      endDate: { gte: new Date() },
+    },
+  });
+
+  if (activeSubscriptions > 0) {
+    const updatedPackage = await prisma.subscriptionPackage.update({
+      where: { id: packageId },
+      data: {
+        isActive: false,
+      },
+    });
+
+    return {
+      package: updatedPackage,
+      message: `Paket ${existingPackage.displayName} dinonaktifkan karena masih digunakan oleh ${activeSubscriptions} subscription aktif`,
+    };
+  }
+  await prisma.subscriptionPackage.delete({
+    where: { id: packageId },
+  });
+
+  return {
+    message: `Paket ${existingPackage.displayName} berhasil dihapus`,
+  };
+};
+
 // Get all active subscribers with stores and members
 export const getActiveSubscribers = async () => {
   const activeSubscribers = await prisma.user.findMany({

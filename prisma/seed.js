@@ -8,47 +8,88 @@ async function main() {
 
   // 1. Seed Subscription Packages
   console.log("📦 Seeding Subscription Packages...");
-  const packages = await Promise.all([
-    prisma.subscriptionPackage.upsert({
-      where: { name: "STANDARD" },
-      update: {},
-      create: {
-        name: "STANDARD",
-        displayName: "Paket Standard",
-        price: 75000,
-        maxUsers: 1,
-        maxMembers: 3,
-        maxStores: 1,
-        isActive: true,
-      },
-    }),
-    prisma.subscriptionPackage.upsert({
-      where: { name: "PRO" },
-      update: {},
-      create: {
-        name: "PRO",
-        displayName: "Paket Pro",
-        price: 150000,
-        maxUsers: 1,
-        maxMembers: 5,
-        maxStores: 3,
-        isActive: true,
-      },
-    }),
-    prisma.subscriptionPackage.upsert({
-      where: { name: "BUSINESS" },
-      update: {},
-      create: {
-        name: "BUSINESS",
-        displayName: "Paket Bisnis",
-        price: 250000,
-        maxUsers: 1,
-        maxMembers: 7,
-        maxStores: 5,
-        isActive: true,
-      },
-    }),
-  ]);
+  const packageTypes = ["STANDARD", "PRO", "BUSINESS"];
+  const durations = [1, 3, 6, 12];
+  const priceMultipliers = {
+    STANDARD: 75000,
+    PRO: 150000,
+    BUSINESS: 250000,
+  };
+  const maxMembers = {
+    STANDARD: 3,
+    PRO: 5,
+    BUSINESS: 7,
+  };
+  const maxStores = {
+    STANDARD: 1,
+    PRO: 3,
+    BUSINESS: 5,
+  };
+
+  // Fungsi untuk menghitung diskon berdasarkan durasi
+  const getDiscountMultiplier = (duration) => {
+    switch (duration) {
+      case 3:
+        return 0.9;
+      case 6:
+        return 0.85;
+      case 12:
+        return 0.8;
+      default:
+        return 1;
+    }
+  };
+
+  const packagePromises = [];
+
+  for (const packageType of packageTypes) {
+    for (const duration of durations) {
+      const basePrice = priceMultipliers[packageType];
+      const discountMultiplier = getDiscountMultiplier(duration);
+      const finalPrice = Math.round(basePrice * duration * discountMultiplier);
+      let displayName = `${packageType.charAt(0)}${packageType
+        .slice(1)
+        .toLowerCase()}`;
+      if (duration > 1) {
+        const discount = (1 - discountMultiplier) * 100;
+        displayName += ` ${duration} Bulan (Hemat ${discount}%)`;
+      } else {
+        displayName += ` ${duration} Bulan`;
+      }
+
+      packagePromises.push(
+        prisma.subscriptionPackage.upsert({
+          where: {
+            name_duration: {
+              name: packageType,
+              duration: duration,
+            },
+          },
+          update: {
+            displayName,
+            price: finalPrice,
+            maxUsers: 1,
+            maxMembers: maxMembers[packageType],
+            maxStores: maxStores[packageType],
+            isActive: true,
+          },
+          create: {
+            name: packageType,
+            displayName,
+            duration: duration,
+            price: finalPrice,
+            maxUsers: 1,
+            maxMembers: maxMembers[packageType],
+            maxStores: maxStores[packageType],
+            isActive: true,
+          },
+        })
+      );
+    }
+  }
+
+  const packages = await Promise.all(packagePromises);
+
   console.log(`✅ Created ${packages.length} subscription packages`);
 
   // 2. Seed Units
@@ -191,9 +232,21 @@ async function main() {
   // 7. Create 3 Stores for Active User
   console.log("🏪 Creating 3 Stores for Active User...");
   const storeNames = [
-    { name: "Toko Sukses Jaya 1", type: "Retail", address: "Jl. Sukses No. 1, Jakarta" },
-    { name: "Toko Sukses Jaya 2", type: "Wholesale", address: "Jl. Sukses No. 2, Jakarta" },
-    { name: "Toko Sukses Jaya 3", type: "Online", address: "Jl. Sukses No. 3, Jakarta" },
+    {
+      name: "Toko Sukses Jaya 1",
+      type: "Retail",
+      address: "Jl. Sukses No. 1, Jakarta",
+    },
+    {
+      name: "Toko Sukses Jaya 2",
+      type: "Wholesale",
+      address: "Jl. Sukses No. 2, Jakarta",
+    },
+    {
+      name: "Toko Sukses Jaya 3",
+      type: "Online",
+      address: "Jl. Sukses No. 3, Jakarta",
+    },
   ];
 
   const createdStores = [];
@@ -207,7 +260,9 @@ async function main() {
           address: storeData.address,
           phone: "+628123456789",
           whatsapp: "+628123456789",
-          email: `${storeData.name.toLowerCase().replace(/\s+/g, '')}@suksesjaya.com`,
+          email: `${storeData.name
+            .toLowerCase()
+            .replace(/\s+/g, "")}@suksesjaya.com`,
           userId: activeUser.id,
         },
       });
@@ -231,10 +286,10 @@ async function main() {
   // 8. Create 9 Member Users (3 per store)
   console.log("👥 Creating 9 Member Users...");
   const memberUsers = [];
-  
+
   for (let i = 1; i <= 9; i++) {
     const memberPassword = await bcrypt.hash(`@Member${i}23`, 10);
-    
+
     try {
       const memberUser = await prisma.user.create({
         data: {
@@ -263,14 +318,17 @@ async function main() {
   // 9. Assign 3 members to each store
   console.log("🔗 Assigning Members to Stores...");
   const roles = ["CASHIER", "MANAGER", "CASHIER"];
-  
+
   for (let storeIndex = 0; storeIndex < createdStores.length; storeIndex++) {
     const store = createdStores[storeIndex];
-    
+
     for (let memberIndex = 0; memberIndex < 3; memberIndex++) {
       const memberUser = memberUsers[storeIndex * 3 + memberIndex];
-      const tempPassword = await bcrypt.hash(`TEMP${storeIndex}${memberIndex}`, 10);
-      
+      const tempPassword = await bcrypt.hash(
+        `TEMP${storeIndex}${memberIndex}`,
+        10
+      );
+
       try {
         await prisma.storeMember.create({
           data: {
@@ -282,7 +340,9 @@ async function main() {
             isActive: true,
           },
         });
-        console.log(`✅ Member ${memberUser.name} assigned to ${store.name} as ${roles[memberIndex]}`);
+        console.log(
+          `✅ Member ${memberUser.name} assigned to ${store.name} as ${roles[memberIndex]}`
+        );
       } catch (error) {
         console.log(`⚠️  Member relationship might already exist`);
       }
@@ -295,7 +355,7 @@ async function main() {
 
   // 11. Create sample categories and products for each store
   console.log("📦 Creating Categories and Products for each store...");
-  
+
   for (const store of createdStores) {
     // Create categories
     const categories = await Promise.all([
@@ -385,9 +445,21 @@ async function main() {
   const firstStore = createdStores[0];
   if (firstStore) {
     const customerData = [
-      { name: "Pelanggan Umum", phone: "+628111111111", email: "umum@customer.com" },
-      { name: "Budi Santoso", phone: "+628222222222", email: "budi@customer.com" },
-      { name: "Siti Rahayu", phone: "+628333333333", email: "siti@customer.com" },
+      {
+        name: "Pelanggan Umum",
+        phone: "+628111111111",
+        email: "umum@customer.com",
+      },
+      {
+        name: "Budi Santoso",
+        phone: "+628222222222",
+        email: "budi@customer.com",
+      },
+      {
+        name: "Siti Rahayu",
+        phone: "+628333333333",
+        email: "siti@customer.com",
+      },
     ];
 
     for (const customer of customerData) {

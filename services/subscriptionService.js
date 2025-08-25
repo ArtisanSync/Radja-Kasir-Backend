@@ -4,10 +4,24 @@ import prisma from "../config/prisma.js";
 export const getAllPackages = async () => {
   const packages = await prisma.subscriptionPackage.findMany({
     where: { isActive: true },
-    orderBy: { price: "asc" },
+    orderBy: [
+      { name: "asc" },
+      { duration: "asc" }
+    ],
   });
 
-  return packages;
+  const groupedPackages = packages.reduce((acc, pkg) => {
+    if (!acc[pkg.name]) {
+      acc[pkg.name] = [];
+    }
+    acc[pkg.name].push(pkg);
+    return acc;
+  }, {});
+
+  return {
+    allPackages: packages,
+    groupedPackages
+  };
 };
 
 // Get user's current active subscription
@@ -54,10 +68,12 @@ export const createNewUserSubscription = async (userId, packageId) => {
   const isNewUser = hasEverSubscribed === 0;
   const now = new Date();
   
-  // NEW USER: Bayar 1 bulan, dapat akses 2 bulan
-  // EXISTING USER: Bayar 1 bulan, dapat akses 1 bulan
-  const daysToAdd = isNewUser ? 60 : 30; // 60 days for new users, 30 for existing
-  const endDate = new Date(now.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+  // NEW USER: Durasi paket + bonus 1 bulan
+  // EXISTING USER: Hanya durasi paket
+  const durationInDays = subscriptionPackage.duration * 30;
+  const bonusForNewUser = isNewUser ? 30 : 0;
+  const totalDays = durationInDays + bonusForNewUser;
+  const endDate = new Date(now.getTime() + (totalDays * 24 * 60 * 60 * 1000));
 
   const subscription = await prisma.subscribe.create({
     data: {
@@ -68,9 +84,9 @@ export const createNewUserSubscription = async (userId, packageId) => {
       endDate,
       isTrial: false,
       isNewUserPromo: isNewUser,
-      paidMonths: 1,
+      paidMonths: subscriptionPackage.duration,
       bonusMonths: isNewUser ? 1 : 0,
-      totalMonths: isNewUser ? 2 : 1,
+      totalMonths: subscriptionPackage.duration + (isNewUser ? 1 : 0),
       autoRenew: true,
     },
     include: {
@@ -83,17 +99,17 @@ export const createNewUserSubscription = async (userId, packageId) => {
     promotion: isNewUser ? {
       isNewUser: true,
       originalPrice: subscriptionPackage.price,
-      paidMonths: 1,
+      paidMonths: subscriptionPackage.duration,
       bonusMonths: 1,
-      totalAccess: "2 bulan",
-      message: `Promo New User: Bayar Rp ${subscriptionPackage.price.toLocaleString('id-ID')} untuk 1 bulan, dapatkan akses 2 bulan penuh!`
+      totalAccess: `${subscriptionPackage.duration + 1} bulan`,
+      message: `Promo New User: Bayar Rp ${subscriptionPackage.price.toLocaleString('id-ID')} untuk ${subscriptionPackage.duration} bulan, dapatkan akses ${subscriptionPackage.duration + 1} bulan penuh!`
     } : {
       isNewUser: false,
       originalPrice: subscriptionPackage.price,
-      paidMonths: 1,
+      paidMonths: subscriptionPackage.duration,
       bonusMonths: 0,
-      totalAccess: "1 bulan",
-      message: `Subscription ${subscriptionPackage.displayName} - akses 1 bulan`
+      totalAccess: `${subscriptionPackage.duration} bulan`,
+      message: `Subscription ${subscriptionPackage.displayName} - akses ${subscriptionPackage.duration} bulan`
     }
   };
 };
@@ -120,7 +136,8 @@ export const renewSubscription = async (userId, packageId) => {
   }
 
   const now = new Date();
-  const endDate = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000)); // 30 days
+  const durationInDays = subscriptionPackage.duration * 30;
+  const endDate = new Date(now.getTime() + (durationInDays * 24 * 60 * 60 * 1000));
 
   const subscription = await prisma.subscribe.create({
     data: {
@@ -131,9 +148,9 @@ export const renewSubscription = async (userId, packageId) => {
       endDate,
       isTrial: false,
       isNewUserPromo: false,
-      paidMonths: 1,
+      paidMonths: subscriptionPackage.duration,
       bonusMonths: 0,
-      totalMonths: 1,
+      totalMonths: subscriptionPackage.duration,
       autoRenew: true,
     },
     include: {
@@ -143,7 +160,7 @@ export const renewSubscription = async (userId, packageId) => {
 
   return {
     subscription,
-    message: `Subscription ${subscriptionPackage.displayName} renewed for 1 month`
+    message: `Subscription ${subscriptionPackage.displayName} renewed for ${subscriptionPackage.duration} month${subscriptionPackage.duration > 1 ? 's' : ''}`
   };
 };
 
