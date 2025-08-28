@@ -24,7 +24,9 @@ export const createMemberInvitation = async (storeId, invitedEmail, invitedName,
   const existingMember = await prisma.storeMember.findFirst({
     where: {
       storeId,
-      email: invitedEmail.toLowerCase().trim(),
+      user: {
+        email: invitedEmail.toLowerCase().trim(),
+      },
       isActive: true,
     },
   });
@@ -138,23 +140,25 @@ export const acceptMemberInvitation = async (email, password, invitedName) => {
 
   const result = await prisma.$transaction(async (tx) => {
     if (!user) {
-      const newPassword = generateRandomToken();
-      const hashedUserPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-
       user = await tx.user.create({
         data: {
           name: invitedName || invitation.invitedName,
           email: email.toLowerCase().trim(),
-          password: hashedUserPassword,
-          role: "MEMBER",
+          password: invitation.tempPassword,
           emailVerifiedAt: new Date(),
           isActive: true,
+          role: "MEMBER",
         },
       });
     } else if (user.role === "USER") {
       await tx.user.update({
         where: { id: user.id },
-        data: { role: "MEMBER" },
+        data: { role: "MEMBER" }
+      });
+    }
+    if (!user || user.role === "USER") {
+      user = await tx.user.findUnique({
+        where: { email: email.toLowerCase().trim() },
       });
     }
 
@@ -170,7 +174,6 @@ export const acceptMemberInvitation = async (email, password, invitedName) => {
       throw new Error("Anda sudah menjadi member di toko ini");
     }
 
-    // Create store membership
     const storeMember = await tx.storeMember.create({
       data: {
         storeId: invitation.storeId,
@@ -320,10 +323,7 @@ export const getStoreMembers = async (storeId, userId) => {
     orderBy: { joinedAt: "desc" },
   });
 
-  return members.map(member => ({
-    ...member,
-    password: undefined,
-  }));
+  return members;
 };
 
 // Remove member

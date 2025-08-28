@@ -6,6 +6,10 @@ import {
   deleteUserAccount,
   deleteStoreMember,
   getAdminDashboardStats,
+  getAllSubscriptionPackages,
+  createSubscriptionPackage,
+  updateSubscriptionPackage,
+  deleteSubscriptionPackage,
 } from "../services/adminService.js";
 
 // Get all active subscribers
@@ -124,6 +128,49 @@ export const getDashboardStats = async (req, res) => {
   try {
     const stats = await getAdminDashboardStats();
     return successResponse(res, stats, "Dashboard statistics retrieved successfully");
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+export const getSubscriptionPackages = async (req, res) => {
+  try {
+    const packages = await getAllSubscriptionPackages();
+    return successResponse(res, packages, "Subscription packages retrieved successfully");
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+// Create new subscription package
+export const createPackage = async (req, res) => {
+  try {
+    const packageData = req.body;
+    const newPackage = await createSubscriptionPackage(packageData);
+    return successResponse(res, newPackage, "Subscription package created successfully");
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+// Update subscription package
+export const updatePackage = async (req, res) => {
+  try {
+    const { packageId } = req.params;
+    const packageData = req.body;
+    const updatedPackage = await updateSubscriptionPackage(packageId, packageData);
+    return successResponse(res, updatedPackage, "Subscription package updated successfully");
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+// Delete subscription package
+export const deletePackage = async (req, res) => {
+  try {
+    const { packageId } = req.params;
+    const result = await deleteSubscriptionPackage(packageId);
+    return successResponse(res, result, result.message);
   } catch (error) {
     return errorResponse(res, error.message, 400);
   }
