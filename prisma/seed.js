@@ -317,7 +317,7 @@ async function main() {
 
   // 9. Assign 3 members to each store
   console.log("🔗 Assigning Members to Stores...");
-  const roles = ["CASHIER", "MANAGER", "CASHIER"];
+  const roles = ["CASHIER"];
 
   for (let storeIndex = 0; storeIndex < createdStores.length; storeIndex++) {
     const store = createdStores[storeIndex];

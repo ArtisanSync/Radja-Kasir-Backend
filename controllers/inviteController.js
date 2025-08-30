@@ -27,7 +27,7 @@ export const createInvite = async (req, res) => {
       return errorResponse(res, "Nama member minimal 2 karakter", 400);
     }
 
-    const allowedRoles = ["CASHIER", "MANAGER", "ADMIN"];
+    const allowedRoles = ["CASHIER"];
     if (!allowedRoles.includes(role)) {
       return errorResponse(res, "Role tidak valid", 400);
     }
