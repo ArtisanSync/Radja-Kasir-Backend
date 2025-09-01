@@ -11,17 +11,17 @@ import {
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 import { authorizeAdmin } from "../middlewares/roleMiddleware.js";
 import { requireSubscription } from "../middlewares/subscriptionMiddleware.js";
+import { uploadSingle } from "../middlewares/multer.js";
 
 const router = express.Router();
 
-// Authentication required for all routes
 router.use(authenticateToken);
 
-router.post("/first", requireSubscription, createFirstStoreController);
-router.post("/", requireSubscription, createNewStore);
+router.post("/first", requireSubscription, uploadSingle('logo'), createFirstStoreController);
+router.post("/", requireSubscription, uploadSingle('logo'), createNewStore);
+router.put("/:storeId", requireSubscription, uploadSingle('logo'), updateStoreDetails);
 router.get("/my-stores", requireSubscription, getMyStores);
 router.get("/:storeId", requireSubscription, getStoreDetails);
-router.put("/:storeId", requireSubscription, updateStoreDetails);
 router.delete("/:storeId", requireSubscription, deleteStoreById);
 
 // Admin only routes
