@@ -533,3 +533,239 @@ const createStockExcelSheet = async (workbook, data) => {
     column.width = 15;
   });
 };
+
+export const getProfitReport = async (
+  storeId,
+  userId,
+  period = "1",
+  startDate,
+  endDate
+) => {
+  const store = await validateStoreAccess(storeId, userId);
+  const dateRange = getDateRange(period, startDate, endDate);
+
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      storeId,
+      status: "COMPLETED",
+      type: "SALE",
+      createdAt: dateRange,
+    },
+    include: {
+      items: {
+        include: {
+          product: {
+            select: { name: true, category: { select: { name: true } } },
+          },
+          variant: { select: { name: true, capitalPrice: true } },
+        },
+      },
+    },
+  });
+
+  const { profitSummary, profitByProduct, dailyProfit } =
+    calculateProfitDetails(transactions);
+
+  return {
+    period,
+    dateRange: {
+      start: format(dateRange.gte, "yyyy-MM-dd", { locale: id }),
+      end: format(dateRange.lte || new Date(), "yyyy-MM-dd", { locale: id }),
+    },
+    store: { id: store.id, name: store.name },
+    summary: profitSummary,
+    profitByProduct,
+    dailyProfit,
+  };
+};
+
+export const getMarginReport = async (
+  storeId,
+  userId,
+  period = "1",
+  startDate,
+  endDate
+) => {
+  const store = await validateStoreAccess(storeId, userId);
+  const dateRange = getDateRange(period, startDate, endDate);
+
+  const products = await prisma.product.findMany({
+    where: {
+      storeId,
+      isActive: true,
+      variants: { some: { isActive: true, capitalPrice: { gt: 0 } } },
+    },
+    include: {
+      category: { select: { name: true } },
+      variants: {
+        where: { isActive: true, capitalPrice: { gt: 0 } },
+        select: { name: true, price: true, capitalPrice: true },
+      },
+    },
+  });
+
+  const { marginSummary, marginByCategory, topProducts } =
+    calculateMarginDetails(products);
+
+  return {
+    period,
+    dateRange: {
+      start: format(dateRange.gte, "yyyy-MM-dd", { locale: id }),
+      end: format(dateRange.lte || new Date(), "yyyy-MM-dd", { locale: id }),
+    },
+    store: { id: store.id, name: store.name },
+    summary: marginSummary,
+    marginByCategory,
+    topProducts,
+  };
+};
+
+const getDateRange = (period, startDate, endDate) => {
+  if (startDate && endDate) {
+    return {
+      gte: startOfDay(new Date(startDate)),
+      lte: endOfDay(new Date(endDate)),
+    };
+  }
+  const now = new Date();
+  switch (period) {
+    case "1":
+      return {
+        gte: startOfMonth(subMonths(now, 1)),
+        lte: endOfMonth(subMonths(now, 1)),
+      };
+    case "6":
+      return {
+        gte: startOfMonth(subMonths(now, 6)),
+        lte: endOfMonth(subMonths(now, 1)),
+      };
+    case "12":
+      return {
+        gte: startOfMonth(subMonths(now, 12)),
+        lte: endOfMonth(subMonths(now, 1)),
+      };
+    default:
+      return { gte: startOfMonth(now), lte: now };
+  }
+};
+
+const calculateProfitDetails = (transactions) => {
+  let totalRevenue = 0;
+  let totalCapital = 0;
+  const productMap = new Map();
+  const dailyMap = new Map();
+
+  transactions.forEach((tx) => {
+    totalRevenue += Number(tx.total);
+    const day = format(new Date(tx.createdAt), "yyyy-MM-dd");
+    if (!dailyMap.has(day)) {
+      dailyMap.set(day, { date: day, revenue: 0, capital: 0, profit: 0 });
+    }
+    const dayData = dailyMap.get(day);
+    dayData.revenue += Number(tx.total);
+
+    tx.items.forEach((item) => {
+      const capitalPrice = Number(item.variant?.capitalPrice || 0);
+      const itemCapital = capitalPrice * item.quantity;
+      const itemRevenue = Number(item.subtotal);
+      const itemProfit = itemRevenue - itemCapital;
+
+      totalCapital += itemCapital;
+      dayData.capital += itemCapital;
+      dayData.profit += itemProfit;
+
+      const key = item.productId;
+      if (!productMap.has(key)) {
+        productMap.set(key, {
+          name: item.product.name,
+          category: item.product.category?.name || "Tanpa Kategori",
+          totalQuantity: 0,
+          totalRevenue: 0,
+          totalCapital: 0,
+          totalProfit: 0,
+        });
+      }
+      const product = productMap.get(key);
+      product.totalQuantity += item.quantity;
+      product.totalRevenue += itemRevenue;
+      product.totalCapital += itemCapital;
+      product.totalProfit += itemProfit;
+    });
+  });
+
+  const totalProfit = totalRevenue - totalCapital;
+  const profitSummary = {
+    totalRevenue,
+    totalCapital,
+    totalProfit,
+    netProfitMargin: totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0,
+  };
+
+  const profitByProduct = Array.from(productMap.values()).sort(
+    (a, b) => b.totalProfit - a.totalProfit
+  );
+  const dailyProfit = Array.from(dailyMap.values()).sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+
+  return { profitSummary, profitByProduct, dailyProfit };
+};
+
+const calculateMarginDetails = (products) => {
+  const categoryMap = new Map();
+  let allMargins = [];
+
+  products.forEach((product) => {
+    const categoryName = product.category?.name || "Tanpa Kategori";
+    if (!categoryMap.has(categoryName)) {
+      categoryMap.set(categoryName, {
+        name: categoryName,
+        totalVariants: 0,
+        avgMargin: 0,
+        margins: [],
+      });
+    }
+    const category = categoryMap.get(categoryName);
+
+    product.variants.forEach((variant) => {
+      const price = Number(variant.price);
+      const capital = Number(variant.capitalPrice);
+      if (price > 0) {
+        const margin = ((price - capital) / price) * 100;
+        const marginData = {
+          productName: product.name,
+          variantName: variant.name,
+          margin,
+        };
+        category.margins.push(margin);
+        allMargins.push(marginData);
+      }
+    });
+  });
+
+  categoryMap.forEach((cat) => {
+    cat.totalVariants = cat.margins.length;
+    cat.avgMargin =
+      cat.margins.reduce((sum, m) => sum + m, 0) / cat.margins.length || 0;
+    delete cat.margins;
+  });
+
+  const totalAvgMargin =
+    allMargins.reduce((sum, m) => sum + m.margin, 0) / allMargins.length || 0;
+
+  allMargins.sort((a, b) => b.margin - a.margin);
+  const topProducts = {
+    mostProfitable: allMargins.slice(0, 5),
+    leastProfitable: allMargins.slice(-5).reverse(),
+  };
+
+  return {
+    marginSummary: {
+      totalProducts: products.length,
+      totalVariants: allMargins.length,
+      averageMargin: totalAvgMargin,
+    },
+    marginByCategory: Array.from(categoryMap.values()),
+    topProducts,
+  };
+};
