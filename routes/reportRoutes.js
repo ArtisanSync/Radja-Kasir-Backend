@@ -6,6 +6,8 @@ import {
   downloadStockReportController,
   getDashboardSummaryController,
   getComparisonReportController,
+  getProfitReportController,
+  getMarginReportController,
 } from "../controllers/reportController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 import { requireSubscription } from "../middlewares/subscriptionMiddleware.js";
@@ -20,6 +22,8 @@ router.get("/:storeId/sales", getSalesReportController);
 router.get("/:storeId/stock", getStockReportController);
 router.get("/:storeId/dashboard", getDashboardSummaryController);
 router.get("/:storeId/comparison", getComparisonReportController);
+router.get("/:storeId/profit", getProfitReportController);
+router.get("/:storeId/margin", getMarginReportController);
 router.get("/:storeId/sales/download", downloadSalesReportController);
 router.get("/:storeId/stock/download", downloadStockReportController);
 

@@ -3,6 +3,8 @@ import {
   getSalesReport,
   getStockReport,
   generateExcelReport,
+  getProfitReport,
+  getMarginReport,
 } from "../services/reportService.js";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
@@ -328,6 +330,60 @@ export const getComparisonReportController = async (req, res) => {
       res,
       comparison,
       "Comparison report retrieved successfully"
+    );
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+export const getProfitReportController = async (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const { period = "realtime", startDate, endDate } = req.query;
+    const userId = req.user.id;
+
+    if (!storeId) {
+      return errorResponse(res, "Store ID is required", 400);
+    }
+
+    const reportData = await getProfitReport(
+      storeId,
+      userId,
+      period,
+      startDate,
+      endDate
+    );
+    return successResponse(
+      res,
+      reportData,
+      "Profit report retrieved successfully"
+    );
+  } catch (error) {
+    return errorResponse(res, error.message, 400);
+  }
+};
+
+export const getMarginReportController = async (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const { period = "realtime", startDate, endDate } = req.query;
+    const userId = req.user.id;
+
+    if (!storeId) {
+      return errorResponse(res, "Store ID is required", 400);
+    }
+
+    const reportData = await getMarginReport(
+      storeId,
+      userId,
+      period,
+      startDate,
+      endDate
+    );
+    return successResponse(
+      res,
+      reportData,
+      "Margin report retrieved successfully"
     );
   } catch (error) {
     return errorResponse(res, error.message, 400);
