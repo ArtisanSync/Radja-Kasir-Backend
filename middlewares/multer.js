@@ -13,7 +13,6 @@ const ALLOWED_MIME_TYPES = [
 const ALLOWED_EXTENSIONS = [".png", ".jpg", ".jpeg"];
 
 const fileFilter = (req, file, cb) => {
-  // Check MIME type
   if (!ALLOWED_MIME_TYPES.includes(file.mimetype.toLowerCase())) {
     return cb(
       new Error("Only PNG and JPG image files are allowed"),
@@ -35,8 +34,6 @@ const upload = multer({
   fileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1,
-    fieldSize: 1024 * 1024,
   },
 });
 
@@ -45,50 +42,13 @@ export const uploadSingle = (fieldName) => {
     upload.single(fieldName)(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
-          switch (err.code) {
-            case "LIMIT_FILE_SIZE":
-              return errorResponse(
-                res,
-                "File too large. Maximum size is 5MB",
-                400
-              );
-            case "LIMIT_FILE_COUNT":
-              return errorResponse(
-                res,
-                "Too many files. Only 1 file allowed",
-                400
-              );
-            case "LIMIT_FIELD_VALUE":
-              return errorResponse(
-                res,
-                "Field value too large",
-                400
-              );
-            case "LIMIT_UNEXPECTED_FILE":
-              return errorResponse(
-                res,
-                `Unexpected field name. Expected: ${fieldName}`,
-                400
-              );
-            default:
-              return errorResponse(
-                res,
-                "File upload error occurred",
-                400
-              );
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return errorResponse(res, "File too large. Maximum size is 5MB", 400);
           }
+          return errorResponse(res, "File upload error occurred", 400);
         }
         return errorResponse(res, err.message, 400);
       }
-      if (!req.file) {
-        return errorResponse(
-          res,
-          "No file uploaded. Please select a PNG or JPG image",
-          400
-        );
-      }
-      req.file.uploadTimestamp = new Date().toISOString();
-      
       next();
     });
   };
