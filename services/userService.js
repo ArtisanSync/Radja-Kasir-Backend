@@ -10,8 +10,8 @@ import {
   deleteFileFromStorage,
 } from "../config/storage.js";
 import { BCRYPT_ROUNDS, TOKEN_CONFIG } from "../config/auth.js";
+import { acceptMemberInvitation } from "./inviteService.js";
 
-// Register new user
 export const registerUser = async (userData) => {
   const { name, email, password } = userData;
 
@@ -54,7 +54,7 @@ export const registerUser = async (userData) => {
   };
 };
 
-// Verify email
+// Verify email (Tidak ada perubahan)
 export const verifyEmail = async (email, token) => {
   const user = await prisma.user.findFirst({
     where: {
@@ -100,20 +100,13 @@ export const verifyEmail = async (email, token) => {
 
   return { user: updatedUser, token: loginToken };
 };
-
-// Login user
 export const loginUser = async (email, password) => {
-  const user = await prisma.user.findUnique({ 
+  let user = await prisma.user.findUnique({
     where: { email: email.toLowerCase().trim() },
     include: {
       stores: {
         where: { isActive: true },
-        select: {
-          id: true,
-          name: true,
-          storeType: true,
-          logo: true,
-        },
+        select: { id: true, name: true, storeType: true, logo: true },
         take: 1,
       },
       subscriptions: {
@@ -121,9 +114,7 @@ export const loginUser = async (email, password) => {
           status: { in: ["ACTIVE", "TRIAL"] },
           endDate: { gte: new Date() },
         },
-        include: {
-          package: true,
-        },
+        include: { package: true },
         orderBy: { createdAt: "desc" },
         take: 1,
       },
@@ -145,88 +136,57 @@ export const loginUser = async (email, password) => {
     },
   });
 
+  let isFirstLoginFromInvite = false;
+
   if (!user) {
-    throw new Error(
-      "Invalid email or password. Please check your credentials."
-    );
+    const invitation = await prisma.inviteCode.findFirst({
+      where: {
+        invitedEmail: email.toLowerCase().trim(),
+        status: "PENDING",
+        expiresAt: { gte: new Date() },
+      },
+    });
+    if (!invitation) {
+      throw new Error("Invalid email or password. Please check your credentials.");
+    }
+    const isPasswordValid = await bcrypt.compare(password, invitation.tempPassword);
+    if (!isPasswordValid) {
+      throw new Error("Invalid email or password. Please check your credentials.");
+    }
+    const acceptedResult = await acceptMemberInvitation(email, password, invitation.invitedName);
+    user = await prisma.user.findUnique({ where: { id: acceptedResult.member.userId } });
+    isFirstLoginFromInvite = true;
+  } else {
+    if (!user.emailVerifiedAt && user.role !== 'MEMBER') {
+      throw new Error("Please verify your email address before logging in");
+    }
+    if (!user.isActive) {
+      throw new Error("Account is deactivated. Please contact support.");
+    }
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new Error("Invalid email or password. Please check your credentials.");
+    }
   }
-
-  if (!user.isActive) {
-    throw new Error("Account is deactivated. Please contact support.");
+  if (!user) {
+    throw new Error("An unexpected error occurred during login.");
   }
-
-  if (!user.emailVerifiedAt) {
-    throw new Error("Please verify your email address before logging in");
-  }
-
-  const isPasswordValid = await bcrypt.compare(password, user.password);
-  if (!isPasswordValid) {
-    throw new Error(
-      "Invalid email or password. Please check your credentials."
-    );
-  }
-
-  // Update last login
   await prisma.user.update({
     where: { id: user.id },
     data: { lastLoginAt: new Date() },
   });
 
   const token = generateToken({ userId: user.id, email: user.email });
-  const { password: _, rememberToken: __, ...userWithoutPassword } = user;
-
-  let userType = user.role;
-  let accessType = "USER_NEEDS_SUBSCRIPTION";
-  let firstStore = user.stores.length > 0 ? user.stores[0] : null;
-  let currentSubscription = user.subscriptions.length > 0 ? user.subscriptions[0] : null;
-
-  if (user.role === "MEMBER" && user.storeMembers.length > 0) {
-    firstStore = user.storeMembers[0].store;
-    const ownerId = firstStore.userId;
-    const ownerSubscription = await prisma.subscribe.findFirst({
-      where: {
-        userId: ownerId,
-        status: { in: ["ACTIVE", "TRIAL"] },
-        endDate: { gte: new Date() },
-      },
-      include: { package: true },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (ownerSubscription) {
-      accessType = "MEMBER_WITH_SUBSCRIPTION";
-      currentSubscription = ownerSubscription;
-    } else {
-      accessType = "MEMBER_NEEDS_SUBSCRIPTION";
-      currentSubscription = null;
-    }
-  } else if (user.role === "ADMIN") {
-    accessType = "ADMIN_ACCESS";
-  } else if (user.role === "USER") {
-    if (user.subscriptions.length > 0) {
-      accessType = "USER_WITH_SUBSCRIPTION";
-      currentSubscription = user.subscriptions[0];
-    }
-  }
-
-  const hasStore = user.stores.length > 0;
-  const hasActiveSubscription = !!currentSubscription;
-
+  const fullUserProfile = await getUserProfile(user.id);
+  
   const userResponse = {
-    ...userWithoutPassword,
-    hasStore,
-    isSubscribed: hasActiveSubscription,
-    currentSubscription,
-    firstStore,
-    userType,
-    accessType,
-    storeMembers: user.storeMembers,
+    ...fullUserProfile,
+    mustChangePassword: isFirstLoginFromInvite,
   };
-
+  
   return { user: userResponse, token };
 };
 
-// Update user profile
 export const updateUser = async (userId, updateData, file) => {
   const existingUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -266,8 +226,6 @@ export const updateUser = async (userId, updateData, file) => {
   }
 
   const updatePayload = {};
-  
-  // Handle fields
   if (updateData.name) updatePayload.name = updateData.name.trim();
   if (updateData.phone) updatePayload.phone = updateData.phone.trim();
   if (updateData.businessName !== undefined) updatePayload.businessName = updateData.businessName?.trim() || null;
@@ -276,8 +234,6 @@ export const updateUser = async (userId, updateData, file) => {
   if (updateData.whatsapp !== undefined) updatePayload.whatsapp = updateData.whatsapp?.trim() || null;
 
   if (avatarUrl !== existingUser.avatar) updatePayload.avatar = avatarUrl;
-
-  // Handle password update
   if (updateData.password) {
     updatePayload.password = await bcrypt.hash(updateData.password, BCRYPT_ROUNDS);
   }
@@ -303,7 +259,6 @@ export const updateUser = async (userId, updateData, file) => {
   return user;
 };
 
-// Get user profile
 export const getUserProfile = async (userId) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
