@@ -88,20 +88,11 @@ export const verifyUserEmail = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password) {
       return errorResponse(res, "Email and password are required", 400);
     }
-
     const result = await loginUser(email, password);
-
-    const response = {
-      ...result,
-      userType: result.user.role,
-      accessType: determineAccessType(result.user)
-    };
-
-    return successResponse(res, response, "Login successful. Welcome back!");
+    return successResponse(res, result, "Login successful. Welcome back!");
   } catch (error) {
     return errorResponse(res, error.message, 401);
   }
