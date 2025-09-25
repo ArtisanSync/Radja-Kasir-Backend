@@ -14,7 +14,7 @@ export const createProduct = async (productData, file, userId) => {
     discountPercent = 0,
     discountRp = 0,
     quantity,
-    storeId
+    storeId,
   } = productData;
 
   if (!name || name.trim().length === 0) {
@@ -42,7 +42,9 @@ export const createProduct = async (productData, file, userId) => {
   const numDiscountRp = parseFloat(discountRp) || 0;
 
   if (numDiscountPercent > 0 && numDiscountRp > 0) {
-    throw new Error("Cannot apply both percentage and amount discount simultaneously");
+    throw new Error(
+      "Cannot apply both percentage and amount discount simultaneously"
+    );
   }
 
   if (numDiscountPercent < 0 || numDiscountPercent > 100) {
@@ -58,13 +60,10 @@ export const createProduct = async (productData, file, userId) => {
   }
 
   const store = await prisma.store.findFirst({
-    where: { 
+    where: {
       id: storeId,
-      OR: [
-        { userId: userId },
-        { members: { some: { userId: userId, isActive: true } } }
-      ]
-    }
+      OR: [{ userId: userId }, { members: { some: { userId: userId } } }],
+    },
   });
 
   if (!store) {
@@ -73,7 +72,7 @@ export const createProduct = async (productData, file, userId) => {
 
   // Validate unit exists
   const unit = await prisma.unit.findUnique({
-    where: { id: unitId }
+    where: { id: unitId },
   });
   if (!unit) {
     throw new Error("Unit not found");
@@ -81,7 +80,7 @@ export const createProduct = async (productData, file, userId) => {
 
   if (code) {
     const existingProduct = await prisma.product.findFirst({
-      where: { code, storeId, isActive: true }
+      where: { code, storeId, isActive: true },
     });
     if (existingProduct) {
       throw new Error("Product code already exists in this store");
@@ -90,7 +89,7 @@ export const createProduct = async (productData, file, userId) => {
 
   if (categoryId) {
     const category = await prisma.category.findFirst({
-      where: { id: categoryId, storeId }
+      where: { id: categoryId, storeId },
     });
     if (!category) {
       throw new Error("Category not found in this store");
@@ -159,26 +158,22 @@ export const createProduct = async (productData, file, userId) => {
 
 // Get all products by store
 export const getProductsByStore = async (storeId, userId, filters = {}) => {
-  const { 
-    search, 
-    categoryId, 
-    page = 1, 
-    limit = 20, 
+  const {
+    search,
+    categoryId,
+    page = 1,
+    limit = 20,
     isFavorite,
     lowStock,
-    stockThreshold = 10
+    stockThreshold = 10,
   } = filters;
 
   const store = await prisma.store.findFirst({
-    where: { 
+    where: {
       id: storeId,
-      OR: [
-        { userId: userId },
-        { members: { some: { userId: userId, isActive: true } } }
-      ]
-    }
+      OR: [{ userId: userId }, { members: { some: { userId: userId } } }],
+    },
   });
-
   if (!store) {
     throw new Error("Store not found or you don't have access");
   }
@@ -194,13 +189,13 @@ export const getProductsByStore = async (storeId, userId, filters = {}) => {
       ],
     }),
     ...(categoryId && { categoryId }),
-    ...(isFavorite !== undefined && { isFavorite: isFavorite === 'true' }),
+    ...(isFavorite !== undefined && { isFavorite: isFavorite === "true" }),
     ...(lowStock && {
       variants: {
         some: {
-          quantity: { lte: parseInt(stockThreshold) }
-        }
-      }
+          quantity: { lte: parseInt(stockThreshold) },
+        },
+      },
     }),
   };
 
@@ -253,13 +248,10 @@ export const getProductById = async (productId, userId) => {
   }
 
   const hasAccess = await prisma.store.findFirst({
-    where: { 
+    where: {
       id: product.storeId,
-      OR: [
-        { userId: userId },
-        { members: { some: { userId: userId, isActive: true } } }
-      ]
-    }
+      OR: [{ userId: userId }, { members: { some: { userId: userId } } }],
+    },
   });
 
   if (!hasAccess) {
@@ -285,7 +277,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     discountRp,
     quantity,
     isActive,
-    isFavorite
+    isFavorite,
   } = updateData;
 
   if (name !== undefined) {
@@ -312,14 +304,28 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
   }
   const currentVariant = existingProduct.variants[0] || {};
-  const currentPrice = price !== undefined ? parseFloat(price) : parseFloat(currentVariant.price || 0);
-  const currentCapitalPrice = capitalPrice !== undefined ? parseFloat(capitalPrice) : parseFloat(currentVariant.capitalPrice || 0);
-  const currentDiscountPercent = discountPercent !== undefined ? parseFloat(discountPercent) : parseFloat(currentVariant.discountPercent || 0);
-  const currentDiscountRp = discountRp !== undefined ? parseFloat(discountRp) : parseFloat(currentVariant.discountRp || 0);
+  const currentPrice =
+    price !== undefined
+      ? parseFloat(price)
+      : parseFloat(currentVariant.price || 0);
+  const currentCapitalPrice =
+    capitalPrice !== undefined
+      ? parseFloat(capitalPrice)
+      : parseFloat(currentVariant.capitalPrice || 0);
+  const currentDiscountPercent =
+    discountPercent !== undefined
+      ? parseFloat(discountPercent)
+      : parseFloat(currentVariant.discountPercent || 0);
+  const currentDiscountRp =
+    discountRp !== undefined
+      ? parseFloat(discountRp)
+      : parseFloat(currentVariant.discountRp || 0);
 
   if (discountPercent !== undefined || discountRp !== undefined) {
     if (currentDiscountPercent > 0 && currentDiscountRp > 0) {
-      throw new Error("Cannot apply both percentage and amount discount simultaneously");
+      throw new Error(
+        "Cannot apply both percentage and amount discount simultaneously"
+      );
     }
 
     if (currentDiscountPercent < 0 || currentDiscountPercent > 100) {
@@ -335,17 +341,20 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
   }
 
-  if ((capitalPrice !== undefined || price !== undefined) && currentCapitalPrice > currentPrice) {
+  if (
+    (capitalPrice !== undefined || price !== undefined) &&
+    currentCapitalPrice > currentPrice
+  ) {
     throw new Error("Capital price should not exceed selling price");
   }
   if (code !== undefined && code !== existingProduct.code) {
     const codeExists = await prisma.product.findFirst({
-      where: { 
-        code, 
+      where: {
+        code,
         storeId: existingProduct.storeId,
         id: { not: productId },
-        isActive: true
-      }
+        isActive: true,
+      },
     });
     if (codeExists) {
       throw new Error("Product code already exists in this store");
@@ -353,7 +362,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
   }
   if (categoryId !== undefined && categoryId !== null) {
     const category = await prisma.category.findFirst({
-      where: { id: categoryId, storeId: existingProduct.storeId }
+      where: { id: categoryId, storeId: existingProduct.storeId },
     });
     if (!category) {
       throw new Error("Category not found in this store");
@@ -361,7 +370,7 @@ export const updateProduct = async (productId, updateData, file, userId) => {
   }
   if (unitId !== undefined) {
     const unit = await prisma.unit.findUnique({
-      where: { id: unitId }
+      where: { id: unitId },
     });
     if (!unit) {
       throw new Error("Unit not found");
@@ -386,9 +395,9 @@ export const updateProduct = async (productId, updateData, file, userId) => {
   }
 
   const parseBoolean = (value) => {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'string') {
-      return value.toLowerCase() === 'true' || value === '1';
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      return value.toLowerCase() === "true" || value === "1";
     }
     return Boolean(value);
   };
@@ -396,14 +405,16 @@ export const updateProduct = async (productId, updateData, file, userId) => {
   // Update product and variant in transaction
   const result = await prisma.$transaction(async (tx) => {
     const productUpdateData = {};
-    
+
     if (name !== undefined) productUpdateData.name = name.trim();
     if (code !== undefined) productUpdateData.code = code;
     if (brand !== undefined) productUpdateData.brand = brand;
     if (file) productUpdateData.image = imageUrl;
     if (categoryId !== undefined) productUpdateData.categoryId = categoryId;
-    if (isActive !== undefined) productUpdateData.isActive = parseBoolean(isActive);
-    if (isFavorite !== undefined) productUpdateData.isFavorite = parseBoolean(isFavorite);
+    if (isActive !== undefined)
+      productUpdateData.isActive = parseBoolean(isActive);
+    if (isFavorite !== undefined)
+      productUpdateData.isFavorite = parseBoolean(isFavorite);
     let product = existingProduct;
     if (Object.keys(productUpdateData).length > 0) {
       product = await tx.product.update({
@@ -421,15 +432,21 @@ export const updateProduct = async (productId, updateData, file, userId) => {
     }
 
     const variantUpdateData = {};
-    
+
     if (unitId !== undefined) variantUpdateData.unitId = unitId;
     if (quantity !== undefined) variantUpdateData.quantity = parseInt(quantity);
-    if (capitalPrice !== undefined) variantUpdateData.capitalPrice = parseFloat(capitalPrice);
+    if (capitalPrice !== undefined)
+      variantUpdateData.capitalPrice = parseFloat(capitalPrice);
     if (price !== undefined) variantUpdateData.price = parseFloat(price);
-    if (discountPercent !== undefined) variantUpdateData.discountPercent = parseFloat(discountPercent);
-    if (discountRp !== undefined) variantUpdateData.discountRp = parseFloat(discountRp);
+    if (discountPercent !== undefined)
+      variantUpdateData.discountPercent = parseFloat(discountPercent);
+    if (discountRp !== undefined)
+      variantUpdateData.discountRp = parseFloat(discountRp);
     if (file) variantUpdateData.image = imageUrl;
-    if (Object.keys(variantUpdateData).length > 0 && existingProduct.variants.length > 0) {
+    if (
+      Object.keys(variantUpdateData).length > 0 &&
+      existingProduct.variants.length > 0
+    ) {
       await tx.productVariant.update({
         where: { id: existingProduct.variants[0].id },
         data: variantUpdateData,
@@ -480,8 +497,8 @@ export const deleteProduct = async (productId, userId) => {
     data: { isActive: false },
   });
 
-  return { 
-    deletedProduct: product.name
+  return {
+    deletedProduct: product.name,
   };
 };
 
