@@ -32,12 +32,12 @@ export const registerUser = async (userData) => {
       password: hashedPassword,
       rememberToken: verificationToken,
     },
-    select: { 
-      id: true, 
-      name: true, 
-      email: true, 
-      role: true, 
-      createdAt: true 
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
     },
   });
 
@@ -50,7 +50,8 @@ export const registerUser = async (userData) => {
 
   return {
     user,
-    message: "Registration successful. Please check your email to verify your account.",
+    message:
+      "Registration successful. Please check your email to verify your account.",
   };
 };
 
@@ -147,17 +148,30 @@ export const loginUser = async (email, password) => {
       },
     });
     if (!invitation) {
-      throw new Error("Invalid email or password. Please check your credentials.");
+      throw new Error(
+        "Invalid email or password. Please check your credentials."
+      );
     }
-    const isPasswordValid = await bcrypt.compare(password, invitation.tempPassword);
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      invitation.tempPassword
+    );
     if (!isPasswordValid) {
-      throw new Error("Invalid email or password. Please check your credentials.");
+      throw new Error(
+        "Invalid email or password. Please check your credentials."
+      );
     }
-    const acceptedResult = await acceptMemberInvitation(email, password, invitation.invitedName);
-    user = await prisma.user.findUnique({ where: { id: acceptedResult.member.userId } });
+    const acceptedResult = await acceptMemberInvitation(
+      email,
+      password,
+      invitation.invitedName
+    );
+    user = await prisma.user.findUnique({
+      where: { id: acceptedResult.member.userId },
+    });
     isFirstLoginFromInvite = true;
   } else {
-    if (!user.emailVerifiedAt && user.role !== 'MEMBER') {
+    if (!user.emailVerifiedAt && user.role !== "MEMBER") {
       throw new Error("Please verify your email address before logging in");
     }
     if (!user.isActive) {
@@ -165,7 +179,9 @@ export const loginUser = async (email, password) => {
     }
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      throw new Error("Invalid email or password. Please check your credentials.");
+      throw new Error(
+        "Invalid email or password. Please check your credentials."
+      );
     }
   }
   if (!user) {
@@ -178,12 +194,12 @@ export const loginUser = async (email, password) => {
 
   const token = generateToken({ userId: user.id, email: user.email });
   const fullUserProfile = await getUserProfile(user.id);
-  
+
   const userResponse = {
     ...fullUserProfile,
     mustChangePassword: isFirstLoginFromInvite,
   };
-  
+
   return { user: userResponse, token };
 };
 
@@ -205,7 +221,7 @@ export const updateUser = async (userId, updateData, file) => {
   if (file) {
     try {
       const newAvatarUrl = await uploadPhotoToStorage(
-        `data:${file.mimetype};base64,${file.buffer.toString('base64')}`,
+        `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
         userId,
         userId,
         userId,
@@ -215,10 +231,8 @@ export const updateUser = async (userId, updateData, file) => {
       if (newAvatarUrl && existingUser.avatar) {
         try {
           await deleteFileFromStorage(existingUser.avatar);
-        } catch (deleteError) {
-        }
+        } catch (deleteError) {}
       }
-
       avatarUrl = newAvatarUrl;
     } catch (error) {
       throw new Error("Failed to upload avatar");
@@ -228,35 +242,28 @@ export const updateUser = async (userId, updateData, file) => {
   const updatePayload = {};
   if (updateData.name) updatePayload.name = updateData.name.trim();
   if (updateData.phone) updatePayload.phone = updateData.phone.trim();
-  if (updateData.businessName !== undefined) updatePayload.businessName = updateData.businessName?.trim() || null;
-  if (updateData.businessType !== undefined) updatePayload.businessType = updateData.businessType?.trim() || null;
-  if (updateData.businessAddress !== undefined) updatePayload.businessAddress = updateData.businessAddress?.trim() || null;
-  if (updateData.whatsapp !== undefined) updatePayload.whatsapp = updateData.whatsapp?.trim() || null;
+  if (updateData.businessName !== undefined)
+    updatePayload.businessName = updateData.businessName?.trim() || null;
+  if (updateData.businessType !== undefined)
+    updatePayload.businessType = updateData.businessType?.trim() || null;
+  if (updateData.businessAddress !== undefined)
+    updatePayload.businessAddress = updateData.businessAddress?.trim() || null;
+  if (updateData.whatsapp !== undefined)
+    updatePayload.whatsapp = updateData.whatsapp?.trim() || null;
 
   if (avatarUrl !== existingUser.avatar) updatePayload.avatar = avatarUrl;
   if (updateData.password) {
-    updatePayload.password = await bcrypt.hash(updateData.password, BCRYPT_ROUNDS);
+    updatePayload.password = await bcrypt.hash(
+      updateData.password,
+      BCRYPT_ROUNDS
+    );
   }
-
-  const user = await prisma.user.update({
+  await prisma.user.update({
     where: { id: userId },
     data: updatePayload,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      avatar: true,
-      role: true,
-      phone: true,
-      businessName: true,
-      businessType: true,
-      businessAddress: true,
-      whatsapp: true,
-      updatedAt: true,
-    },
   });
-
-  return user;
+  const fullUserProfile = await getUserProfile(userId);
+  return fullUserProfile;
 };
 
 export const getUserProfile = async (userId) => {
@@ -363,7 +370,11 @@ export const resendVerificationToken = async (email) => {
     data: { rememberToken: verificationToken },
   });
 
-  const emailSent = await sendVerificationEmail(email, verificationToken, user.name);
+  const emailSent = await sendVerificationEmail(
+    email,
+    verificationToken,
+    user.name
+  );
   if (!emailSent) {
     throw new Error("Failed to send verification email. Please try again.");
   }
@@ -372,8 +383,8 @@ export const resendVerificationToken = async (email) => {
 };
 
 export const requestPasswordReset = async (email) => {
-  const user = await prisma.user.findUnique({ 
-    where: { email: email.toLowerCase().trim() } 
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase().trim() },
   });
   if (!user) {
     throw new Error("No account found with this email address");
@@ -386,7 +397,11 @@ export const requestPasswordReset = async (email) => {
     data: { rememberToken: resetToken },
   });
 
-  const emailSent = await sendResetPasswordEmail(user.email, resetToken, user.name);
+  const emailSent = await sendResetPasswordEmail(
+    user.email,
+    resetToken,
+    user.name
+  );
   if (!emailSent) {
     throw new Error("Failed to send password reset email. Please try again.");
   }
@@ -395,8 +410,8 @@ export const requestPasswordReset = async (email) => {
 };
 
 export const resendResetToken = async (email) => {
-  const user = await prisma.user.findUnique({ 
-    where: { email: email.toLowerCase().trim() } 
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase().trim() },
   });
   if (!user) {
     throw new Error("No account found with this email address");
@@ -409,7 +424,11 @@ export const resendResetToken = async (email) => {
     data: { rememberToken: resetToken },
   });
 
-  const emailSent = await sendResetPasswordEmail(user.email, resetToken, user.name);
+  const emailSent = await sendResetPasswordEmail(
+    user.email,
+    resetToken,
+    user.name
+  );
   if (!emailSent) {
     throw new Error("Failed to send password reset email. Please try again.");
   }
@@ -459,11 +478,11 @@ export const deleteUser = async (userId, currentUser) => {
 
   const targetUser = await prisma.user.findUnique({
     where: { id: userId },
-    select: { 
-      id: true, 
-      role: true, 
-      name: true, 
-      avatar: true
+    select: {
+      id: true,
+      role: true,
+      name: true,
+      avatar: true,
     },
   });
 
@@ -478,9 +497,7 @@ export const deleteUser = async (userId, currentUser) => {
   if (targetUser.avatar) {
     try {
       await deleteFileFromStorage(targetUser.avatar);
-    } catch (error) {
-
-    }
+    } catch (error) {}
   }
 
   await prisma.user.delete({ where: { id: userId } });
