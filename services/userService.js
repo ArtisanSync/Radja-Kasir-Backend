@@ -14,12 +14,44 @@ import { acceptMemberInvitation } from "./inviteService.js";
 
 export const registerUser = async (userData) => {
   const { name, email, password } = userData;
+  const lowerCaseEmail = email.toLowerCase().trim();
 
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) {
+  const existingUser = await prisma.user.findUnique({
+    where: { email: lowerCaseEmail },
+  });
+
+  if (existingUser && existingUser.emailVerifiedAt) {
     throw new Error(
-      "Email is already registered. Please use a different email or login."
+      "Email is already registered and verified. Please use a different email or login."
     );
+  }
+
+  const pendingInvitation = await prisma.inviteCode.findFirst({
+    where: {
+      invitedEmail: lowerCaseEmail,
+      status: "PENDING",
+      expiresAt: { gte: new Date() },
+    },
+  });
+  if (pendingInvitation) {
+    console.log(
+      `Registration for invited email: ${lowerCaseEmail}. Accepting...`
+    );
+    const acceptedResult = await acceptMemberInvitation(
+      lowerCaseEmail,
+      password,
+      name
+    );
+
+    const token = generateToken({
+      userId: acceptedResult.member.userId,
+      email: lowerCaseEmail,
+    });
+    const fullUserProfile = await getUserProfile(acceptedResult.member.userId);
+    return { user: fullUserProfile, token: token };
+  }
+  if (existingUser && !existingUser.emailVerifiedAt) {
+    await prisma.user.delete({ where: { id: existingUser.id } });
   }
 
   const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -28,34 +60,30 @@ export const registerUser = async (userData) => {
   const user = await prisma.user.create({
     data: {
       name: name.trim(),
-      email: email.toLowerCase().trim(),
+      email: lowerCaseEmail,
       password: hashedPassword,
       rememberToken: verificationToken,
     },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      createdAt: true,
-    },
   });
 
-  // Send verification email
   const emailSent = await sendVerificationEmail(email, verificationToken, name);
   if (!emailSent) {
     await prisma.user.delete({ where: { id: user.id } });
     throw new Error("Failed to send verification email. Please try again.");
   }
-
   return {
-    user,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    },
+    token: null,
     message:
       "Registration successful. Please check your email to verify your account.",
   };
 };
 
-// Verify email (Tidak ada perubahan)
 export const verifyEmail = async (email, token) => {
   const user = await prisma.user.findFirst({
     where: {
