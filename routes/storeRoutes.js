@@ -19,7 +19,7 @@ router.use(authenticateToken);
 
 router.post("/first", requireSubscription, uploadSingle('logo'), createFirstStoreController);
 router.post("/", requireSubscription, uploadSingle('logo'), createNewStore);
-router.put("/:storeId", requireSubscription, uploadSingle('logo'), updateStoreDetails);
+router.post("/:storeId", requireSubscription, uploadSingle('logo'), updateStoreDetails);
 router.get("/my-stores", requireSubscription, getMyStores);
 router.get("/:storeId", requireSubscription, getStoreDetails);
 router.delete("/:storeId", requireSubscription, deleteStoreById);
