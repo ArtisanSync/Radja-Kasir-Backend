@@ -84,7 +84,7 @@ jobs:
             --set-env-vars EMAIL_USER="${{ secrets.EMAIL_USER }}" \
             --set-env-vars EMAIL_PASS="${{ secrets.EMAIL_PASS }}" \
             --set-env-vars JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-            --set-env-vars JWT_EXPIRATION="${{ secrets.JWT_EXPIRATION }}"
+            --set-env-vars JWT_EXPIRATION="${{ secrets.JWT_EXPIRATION }}" \
             --set-env-vars DUITKU_MERCHANT_CODE="${{ secrets.DUITKU_MERCHANT_CODE }}" \
             --set-env-vars DUITKU_API_KEY="${{ secrets.DUITKU_API_KEY }}" \
             --set-env-vars DUITKU_CALLBACK_URL="${{ secrets.DUITKU_CALLBACK_URL }}" \
